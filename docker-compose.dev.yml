@@ -1,0 +1,28 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      CARECALL_LIVE_CALLS_ENABLED: "${CARECALL_LIVE_CALLS_ENABLED:-false}"
+      CARECALL_MAX_LIVE_BATCH_SIZE: "${CARECALL_MAX_LIVE_BATCH_SIZE:-1}"
+      CARECALL_DEMO_MAX_PHONE: "${CARECALL_DEMO_MAX_PHONE:-}"
+      CARECALL_BACKEND_API_TOKEN: "${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}"
+    ports:
+      - "8001:8000"
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      CARECALL_API_BASE_URL: "http://backend:8000"
+      CARECALL_AUTH_SECRET: "${CARECALL_AUTH_SECRET:-carecall-local-dev-secret}"
+      CARECALL_OPERATOR_USERNAME: "${CARECALL_OPERATOR_USERNAME:-carecall-coordinator}"
+      CARECALL_OPERATOR_PASSWORD: "${CARECALL_OPERATOR_PASSWORD:-carecall-demo-password}"
+      CARECALL_BACKEND_API_TOKEN: "${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}"
+    ports:
+      - "3001:3000"
+    depends_on:
+      - backend

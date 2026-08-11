@@ -1,0 +1,157 @@
+[
+  {
+    "id": "rec-001",
+    "display_name": "Eleanor Thompson",
+    "phone_e164": "+15550101001",
+    "consent": {
+      "status": "explicit_consent",
+      "evidence": "Fictional seed record; replace with signed consent before real calls."
+    },
+    "care_profile": {
+      "condition": "general",
+      "severity": "mild",
+      "language": "en",
+      "timezone": "Europe/London",
+      "call_suitability": "direct_call_ok",
+      "communication_rules": ["short_simple_sentences"]
+    },
+    "notes": "Fictional seed record for development only."
+  },
+  {
+    "id": "rec-002",
+    "display_name": "Robert Chen",
+    "phone_e164": "+15550101002",
+    "caregiver_phone_e164": "+15550101902",
+    "consent": {
+      "status": "approved_outreach",
+      "evidence": "Fictional seed caregiver outreach basis for development only."
+    },
+    "care_profile": {
+      "condition": "alzheimer",
+      "severity": "moderate",
+      "language": "en",
+      "timezone": "Europe/London",
+      "call_suitability": "caregiver_first",
+      "communication_rules": [
+        "one_question_at_a_time",
+        "short_simple_sentences",
+        "allow_long_pauses",
+        "yes_no_or_two_choice_questions",
+        "do_not_test_memory",
+        "rephrase_if_confused",
+        "escalate_if_distressed"
+      ]
+    },
+    "authorized_contacts": [
+      {
+        "name": "Marija Chen",
+        "relationship": "spouse",
+        "can_answer_intake": true,
+        "preferred_goodbye": "All the best, Ms Marija."
+      }
+    ],
+    "notes": "Fictional seed record showing caregiver-first dementia handling."
+  },
+  {
+    "id": "rec-003",
+    "display_name": "Maria Santos",
+    "phone_e164": "+15550101003",
+    "consent": {
+      "status": "missing",
+      "evidence": ""
+    },
+    "care_profile": {
+      "condition": "dementia",
+      "severity": "severe",
+      "language": "en",
+      "timezone": "Europe/London",
+      "call_suitability": "do_not_call",
+      "communication_rules": ["staff_only", "escalate_if_distressed"]
+    },
+    "authorized_contacts": [
+      {
+        "name": "Care Team Desk",
+        "relationship": "staff",
+        "can_answer_intake": true,
+        "preferred_goodbye": "Thank you, care team."
+      }
+    ],
+    "notes": "Fictional unsafe record; should be blocked by preflight."
+  },
+  {
+    "id": "rec-004",
+    "display_name": "Anika Patel",
+    "phone_e164": "+15550101004",
+    "caregiver_phone_e164": "+15550101904",
+    "consent": {
+      "status": "explicit_consent",
+      "evidence": "Fictional seed record; manual staff follow-up only."
+    },
+    "care_profile": {
+      "condition": "post_stroke",
+      "severity": "severe",
+      "language": "en",
+      "timezone": "Europe/London",
+      "call_suitability": "staff_only",
+      "communication_rules": ["staff_only", "short_simple_sentences"]
+    },
+    "authorized_contacts": [
+      {
+        "name": "Marija Patel",
+        "relationship": "daughter",
+        "can_answer_intake": true,
+        "preferred_goodbye": "All the best, Ms Marija."
+      }
+    ],
+    "notes": "Fictional critical/manual route record for risk dashboard state."
+  },
+  {
+    "id": "rec-005",
+    "display_name": "George Williams",
+    "phone_e164": "+15550101005",
+    "consent": {
+      "status": "explicit_consent",
+      "evidence": "Fictional seed record; replace with signed consent before real calls."
+    },
+    "care_profile": {
+      "condition": "mobility_impairment",
+      "severity": "mild",
+      "language": "en",
+      "timezone": "Europe/London",
+      "call_suitability": "direct_call_ok",
+      "communication_rules": ["confirm_mobility_constraints", "offer_simple_choices"]
+    },
+    "notes": "Fictional eligible record for delivery-area grouping."
+  },
+  {
+    "id": "rec-demo-max",
+    "display_name": "Max Neous",
+    "phone_e164": "+15550101006",
+    "consent": {
+      "status": "explicit_consent",
+      "evidence": "Fictional seed record for dry-run demo only; real demo phone must be supplied through CARECALL_DEMO_MAX_PHONE."
+    },
+    "care_profile": {
+      "condition": "alzheimer",
+      "severity": "mild",
+      "language": "en",
+      "timezone": "Europe/London",
+      "call_suitability": "direct_call_ok",
+      "communication_rules": [
+        "short_simple_sentences",
+        "ask_speaker_identity_first",
+        "do_not_test_memory",
+        "offer_simple_choices"
+      ]
+    },
+    "authorized_contacts": [
+      {
+        "name": "Marija Neous",
+        "relationship": "trusted_contact",
+        "can_answer_intake": true,
+        "preferred_goodbye": "All the best, Ms Marija."
+      }
+    ],
+    "notes": "Fictional Max Neous demo card for testing authorized-answerer behavior before a final live CALL-E call."
+  }
+]

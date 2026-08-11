@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+dist/
+build/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+.DS_Store
+data/*.sqlite3
+npm-debug.log*

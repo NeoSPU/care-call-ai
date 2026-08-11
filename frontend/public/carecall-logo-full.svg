@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 560" fill="none" role="img" aria-label="Care Call AI">
+  <!-- Full lockup: mark + wordmark (matches logo-care-call.png) -->
+  <g transform="translate(96 24)">
+    <path d="M98 48c28-22 72-22 100 0" stroke="#1A6B66" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <path d="M116 76c18-14 46-14 64 0" stroke="#1A6B66" stroke-width="14" stroke-linecap="round" fill="none"/>
+    <circle cx="148" cy="132" r="42" fill="#0F4C4A"/>
+    <path d="M148 186c-56 0-106 32-124 82-6 18 6 40 26 40h196c20 0 32-22 26-40-18-50-68-82-124-82z" fill="#0F4C4A"/>
+    <path d="M56 292c12-52 50-84 92-84 18 0 34 6 46 16-40 12-70 46-78 90-12 2-26 0-38-6-16-6-22-12-22-16z" fill="#D4A04A"/>
+    <path d="M240 292c-12-52-50-84-92-84-18 0-34 6-46 16 40 12 70 46 78 90 12 2 26 0 38-6 16-6 22-12 22-16z" fill="#D4A04A"/>
+    <path d="M148 200c-26 12-46 40-52 74h104c-6-34-26-62-52-74z" fill="#0F4C4A"/>
+  </g>
+  <text x="256" y="520" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="64" font-weight="650" fill="#0F4C4A" letter-spacing="-0.5">Care Call AI</text>
+</svg>
