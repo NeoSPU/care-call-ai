@@ -39,7 +39,7 @@ Stop if CALL-E auth, tools, or participant readiness are not confirmed.
 Start the demo stack:
 
 ```bash
-make demo-reset
+make demo-up
 ```
 
 Open:
@@ -52,7 +52,7 @@ Confirm before continuing:
 
 - [ ] Backend is on port `8001`.
 - [ ] Frontend is on port `3001`.
-- [ ] `make demo-reset` completed its smoke check.
+- [ ] `make demo-up` started the backend and frontend successfully.
 - [ ] The selected call list contains exactly one eligible demo recipient.
 - [ ] The preflight row shows the expected authorized answerer rule.
 - [ ] Critical, blocked, staff-only, and unreviewed special-handling recipients
@@ -61,20 +61,28 @@ Confirm before continuing:
 
 ## 4. Final Live Gate
 
-For the final approved real call only, stop the dry-run stack and restart the
-backend with the live gate enabled:
+For the final approved real call only, configure live CALL-E values once in
+`.env` before starting the app:
 
-```bash
-make demo-down
-CARECALL_DEMO_MAX_PHONE=+44... LIVE_DEMO_ACK=EXECUTE_LIVE_CALLS make demo-live-max-up
+```text
+CARECALL_LIVE_CALLS_ENABLED=true
+CARECALL_MAX_LIVE_BATCH_SIZE=1
+CARECALL_DEMO_MAX_PHONE=+44...
+CARECALL_CALLE_PROVIDER=mcp_http
+CARECALL_CALLE_MCP_SERVER_URL=https://seleven-mcp-sg.airudder.com/mcp/openagent_oauth
+CARECALL_CALLE_AUTH_TOKEN=...
+CARECALL_CALLE_REGION=GB
 ```
+
+Then start with `make demo-up`. All live-call approval happens in the frontend.
 
 Live execution is allowed only when all of these are true:
 
 - [ ] `CARECALL_LIVE_CALLS_ENABLED=true` is set for the backend process.
 - [ ] `CARECALL_MAX_LIVE_BATCH_SIZE=1` is set or the default value is in use.
-- [ ] `CARECALL_DEMO_MAX_PHONE` is set only in the local shell when the `Max
-      Neous` runtime demo card is the selected live recipient.
+- [ ] `CARECALL_DEMO_MAX_PHONE` is set only in `.env` or deployment secrets
+      when the `Max Neous` runtime demo card is the selected live recipient.
+- [ ] `CARECALL_CALLE_AUTH_TOKEN` is set only for the backend process.
 - [ ] The selected ready key set still matches the backend preflight key set.
 - [ ] The operator has checked all four live confirmation boxes:
   - active consent;

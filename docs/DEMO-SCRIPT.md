@@ -13,17 +13,11 @@ numbers. For practice runs, use the no-call preflight only.
    care profiles, and call suitability.
 4. Keep the first real demo batch small: one non-critical auto-call recipient is
    enough to prove the path without wasting the 20 free calls.
-5. For practice, start the app:
+5. Copy `.env.example` to `.env` once and fill live CALL-E values there only
+   for the final approved demo. Start the app:
 
    ```bash
    make demo-up
-   ```
-
-   For the final live test with the fictional `Max Neous` card, supply the real
-   approved phone only in the local shell:
-
-   ```bash
-   CARECALL_DEMO_MAX_PHONE=+44... LIVE_DEMO_ACK=EXECUTE_LIVE_CALLS make demo-live-max-up
    ```
 
 6. Open `http://localhost:3001/dashboard`.
@@ -94,8 +88,8 @@ Then show:
 
 ## 1:45-2:25 Real CALL-E Moment
 
-For the final video only, run one approved real CALL-E call through the controlled
-Phase 4 execution path after preflight and approval.
+For the final video only, run one approved real CALL-E call through the
+frontend-controlled preflight and approval path.
 
 Say:
 
@@ -106,6 +100,7 @@ Show:
 
 - The approved recipient.
 - The generated condition-aware call goal.
+- The four live confirmation checks and exact authorization phrase.
 - The stored run id and the CALL-E provider status.
 - The `Import latest CALL-E result` action after the call reaches a terminal
   status.

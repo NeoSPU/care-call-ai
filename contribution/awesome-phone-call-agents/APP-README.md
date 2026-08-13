@@ -45,7 +45,7 @@ service request handoff.
 Care Call AI reserves host ports `3001` and `8001`.
 
 ```bash
-cp .env.example .env.local
+cp .env.example .env
 make demo-up
 ```
 
@@ -72,26 +72,29 @@ Tests use fake CALL-E runners and never place real calls.
 Useful individual checks:
 
 ```bash
-make public-export-check
 make final-readiness
 make secrets-check
 ```
 
 ## CALL-E Setup
 
-Use `CALL-E-installation-guide.md` to install and authenticate CALL-E.
+Copy `.env.example` to `.env` once, then keep deployment credentials there or
+in your hosting provider's secret manager. For live demos, the backend needs:
 
-Safe readiness checks:
-
-```bash
-calle --help
-calle auth status
-calle mcp tools
+```text
+CARECALL_BACKEND_API_TOKEN=...
+CARECALL_LIVE_CALLS_ENABLED=true
+CARECALL_MAX_LIVE_BATCH_SIZE=1
+CARECALL_DEMO_MAX_PHONE=+44...
+CARECALL_CALLE_PROVIDER=mcp_http
+CARECALL_CALLE_MCP_SERVER_URL=https://seleven-mcp-sg.airudder.com/mcp/openagent_oauth
+CARECALL_CALLE_AUTH_TOKEN=...
+CARECALL_CALLE_REGION=GB
 ```
 
-Do not run real outbound calls from ad hoc CLI commands. In this app, live calls
-must go through the guarded app execution path after preflight and explicit
-operator approval.
+Do not run real outbound calls from ad hoc terminal commands. In this app, live
+calls must go through the guarded UI path after preflight and explicit operator
+approval.
 
 ## Dry Run And Preview Behaviour
 
@@ -117,11 +120,9 @@ Care Call AI can place real outbound calls only when all live-call gates pass:
   phrase;
 - every participant has consent or an approved outreach basis.
 
-For the final approved real-call demo only:
-
-```bash
-CARECALL_DEMO_MAX_PHONE=+44... LIVE_DEMO_ACK=EXECUTE_LIVE_CALLS make demo-live-max-up
-```
+For the final approved real-call demo, start the app with `make demo-up`, then
+complete live mode, four confirmations, and the exact authorization phrase in
+the frontend.
 
 ## Cancellation And Stop Conditions
 

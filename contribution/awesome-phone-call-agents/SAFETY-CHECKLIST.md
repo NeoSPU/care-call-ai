@@ -7,7 +7,6 @@ Use this before opening a PR to `CALLE-AI/awesome-phone-call-agents`.
 - [ ] No backend bearer token, provider secret, deployment secret, or kubeconfig
       is committed.
 - [ ] `make secrets-check` passes before publishing or recording the demo.
-- [ ] `make public-export-check` passes before publishing the public edition.
 - [ ] `make final-readiness` passes or produces only known manual-submission
       placeholder warnings.
 - [ ] GitHub Actions CI passes on the pushed branch.

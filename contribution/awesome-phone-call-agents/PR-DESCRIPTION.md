@@ -59,7 +59,6 @@ domain-specific support workflow:
 ## Verification
 
 ```bash
-make public-export-check
 make final-readiness
 PYTHONPATH=backend python3 -m unittest discover backend/tests
 npm --prefix frontend test
