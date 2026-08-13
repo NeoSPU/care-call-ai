@@ -1,10 +1,9 @@
-.PHONY: help secrets-check final-readiness public-export-check backend-test frontend-test frontend-build test docker-config demo-up demo-live-up demo-live-max-up demo-down demo-smoke demo-auth-smoke
+.PHONY: help secrets-check final-readiness backend-test frontend-test frontend-build test docker-config demo-up demo-live-up demo-live-max-up demo-down demo-smoke demo-auth-smoke
 
 help:
 	@printf '%s\n' 'Care Call AI public demo commands:'
 	@printf '%s\n' '  make secrets-check       Scan tracked files for tokens and real phone numbers'
 	@printf '%s\n' '  make final-readiness     Run public no-call final demo readiness checks'
-	@printf '%s\n' '  make public-export-check Validate sanitized public repo export policy'
 	@printf '%s\n' '  make test                Run safety, backend, frontend, and build checks'
 	@printf '%s\n' '  make backend-test        Run Python backend tests'
 	@printf '%s\n' '  make frontend-test       Run frontend Vitest suite'
@@ -24,10 +23,7 @@ secrets-check:
 	python3 scripts/secrets_check.py
 
 final-readiness:
-	CARECALL_READINESS_PROFILE=public python3 scripts/final_readiness_check.py
-
-public-export-check:
-	python3 scripts/public_export_check.py
+	python3 scripts/final_readiness_check.py
 
 frontend-test:
 	npm --prefix frontend test -- --run

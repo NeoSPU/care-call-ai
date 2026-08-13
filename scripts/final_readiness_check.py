@@ -11,25 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-PRIVATE_REQUIRED_FILES = (
-    ".planning/STATE.md",
-    ".planning/ROADMAP.md",
-    ".planning/phases/08-product-ia-split-and-demo-readiness/08-CONTEXT.md",
-    ".planning/phases/08-product-ia-split-and-demo-readiness/08-03-SUMMARY.md",
-    ".planning/phases/08-product-ia-split-and-demo-readiness/08-05-PLAN.md",
-    "docs/FINAL-DEMO-CHECKLIST.md",
-    "docs/DEMO-SCRIPT.md",
-    "docs/FINAL-DEMO-READINESS.md",
-    "docs/DEPLOYMENT.md",
-    "docs/HETZNER-K3S-RUNBOOK.md",
-    "docs/HACKATHON-PROJECT-FORM-DRAFT.md",
-    "frontend/src/app/dashboard/DashboardClient.tsx",
-    "frontend/src/app/dashboard/OperatorPanelClient.tsx",
-    "frontend/src/app/dashboard/orders/print/page.tsx",
-    "frontend/src/app/dashboard/urgent-callback/UrgentCallbackClient.tsx",
-)
-
-PUBLIC_REQUIRED_FILES = (
+REQUIRED_FILES = (
     "docs/FINAL-DEMO-CHECKLIST.md",
     "docs/DEMO-SCRIPT.md",
     "docs/FINAL-DEMO-READINESS.md",
@@ -44,18 +26,6 @@ PUBLIC_REQUIRED_FILES = (
     "frontend/src/app/dashboard/orders/print/page.tsx",
     "frontend/src/app/dashboard/urgent-callback/page.tsx",
     "contribution/awesome-phone-call-agents/APP-README.md",
-)
-
-REQUIRED_FILES = PRIVATE_REQUIRED_FILES
-
-REQUIRED_ROADMAP_MARKERS = (
-    "Phase 8: Product IA Split And Demo Readiness",
-    "08-03 — Help delivered session summary",
-    "08-05 — Final UAT",
-)
-
-REQUIRED_STATE_MARKERS = (
-    "Product IA Split And Demo Readiness",
 )
 
 REQUIRED_FORM_WARNINGS = (
@@ -82,17 +52,6 @@ def file_checks(root: Path, required_files: tuple[str, ...]) -> list[ReadinessRe
     ]
 
 
-def marker_checks(root: Path) -> list[ReadinessResult]:
-    results: list[ReadinessResult] = []
-    roadmap = read_text(root, ".planning/ROADMAP.md")
-    state = read_text(root, ".planning/STATE.md")
-    for marker in REQUIRED_ROADMAP_MARKERS:
-        results.append(ReadinessResult("ok" if marker in roadmap else "fail", f"ROADMAP contains {marker!r}"))
-    for marker in REQUIRED_STATE_MARKERS:
-        results.append(ReadinessResult("ok" if marker in state else "fail", f"STATE contains {marker!r}"))
-    return results
-
-
 def safety_env_checks(env: dict[str, str]) -> list[ReadinessResult]:
     live_enabled = env.get("CARECALL_LIVE_CALLS_ENABLED", "false").lower() == "true"
     max_batch = env.get("CARECALL_MAX_LIVE_BATCH_SIZE", "1")
@@ -110,28 +69,17 @@ def submission_warning_checks(root: Path) -> list[ReadinessResult]:
     ]
 
 
-def run_checks(root: Path = ROOT, env: dict[str, str] | None = None, profile: str = "private") -> list[ReadinessResult]:
+def run_checks(root: Path = ROOT, env: dict[str, str] | None = None) -> list[ReadinessResult]:
     check_env = dict(os.environ) if env is None else env
-    normalized_profile = profile.strip().lower()
-    if normalized_profile == "public":
-        required_files = PUBLIC_REQUIRED_FILES
-        planning_checks: list[ReadinessResult] = []
-    elif normalized_profile == "private":
-        required_files = PRIVATE_REQUIRED_FILES
-        planning_checks = marker_checks(root)
-    else:
-        return [ReadinessResult("fail", f"unknown CARECALL_READINESS_PROFILE={profile!r}; use private or public")]
     return [
-        *file_checks(root, required_files),
-        *planning_checks,
+        *file_checks(root, REQUIRED_FILES),
         *safety_env_checks(check_env),
         *submission_warning_checks(root),
     ]
 
 
 def main() -> int:
-    profile = os.environ.get("CARECALL_READINESS_PROFILE", "private")
-    results = run_checks(profile=profile)
+    results = run_checks()
     for result in results:
         print(f"[{result.level}] {result.message}")
 

@@ -21,12 +21,12 @@ Run:
 make final-readiness
 ```
 
-This checks local files, GSD Phase 8 markers, final demo documents, local deployment safety defaults, and public submission placeholders.
+This checks public demo files, final demo documents, local safety defaults, and public submission placeholders.
 
 It does not:
 
 - call CALL-E;
-- require Vercel or Hetzner network access;
+- require cloud network access;
 - print secrets;
 - validate real participant consent.
 

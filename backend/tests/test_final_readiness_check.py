@@ -14,28 +14,6 @@ class FinalReadinessCheckTests(unittest.TestCase):
             path = root / relative_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("placeholder\n", encoding="utf-8")
-        (root / ".planning/ROADMAP.md").write_text(
-            "\n".join(final_readiness_check.REQUIRED_ROADMAP_MARKERS),
-            encoding="utf-8",
-        )
-        (root / ".planning/STATE.md").write_text(
-            "\n".join(final_readiness_check.REQUIRED_STATE_MARKERS),
-            encoding="utf-8",
-        )
-        (root / "docs/HACKATHON-PROJECT-FORM-DRAFT.md").write_text(
-            "\n".join(final_readiness_check.REQUIRED_FORM_WARNINGS),
-            encoding="utf-8",
-        )
-        return root
-
-    def make_public_root(self) -> Path:
-        temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(temp_dir.cleanup)
-        root = Path(temp_dir.name)
-        for relative_path in final_readiness_check.PUBLIC_REQUIRED_FILES:
-            path = root / relative_path
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("placeholder\n", encoding="utf-8")
         (root / "docs/HACKATHON-PROJECT-FORM-DRAFT.md").write_text(
             "\n".join(final_readiness_check.REQUIRED_FORM_WARNINGS),
             encoding="utf-8",
@@ -70,11 +48,10 @@ class FinalReadinessCheckTests(unittest.TestCase):
 
         self.assertTrue(any(result.message == "docs/FINAL-DEMO-CHECKLIST.md exists" for result in results if result.level == "fail"))
 
-    def test_public_readiness_does_not_require_private_planning_or_deployment_docs(self):
+    def test_readiness_does_not_require_private_planning_or_deployment_docs(self):
         results = final_readiness_check.run_checks(
-            self.make_public_root(),
+            self.make_root(),
             {"CARECALL_LIVE_CALLS_ENABLED": "false", "CARECALL_MAX_LIVE_BATCH_SIZE": "1"},
-            profile="public",
         )
 
         failures = [result for result in results if result.level == "fail"]

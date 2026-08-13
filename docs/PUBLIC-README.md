@@ -129,7 +129,6 @@ make frontend-test
 make frontend-build
 make secrets-check
 make final-readiness
-make public-export-check
 ```
 
 ## CALL-E Readiness
