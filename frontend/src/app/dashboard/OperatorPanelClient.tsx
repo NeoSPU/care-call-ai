@@ -8,7 +8,7 @@ import { createBatch } from "../../lib/carecall-api";
 import { readStoredRoundSelection, storeRoundSelection } from "../../lib/round-selection";
 import { logTechnicalError } from "../../lib/technical-log";
 import type { DashboardPayload, PlannedCallDto, RecipientCardDto, ServiceRequestDto } from "../../lib/types";
-import { EMPTY_SERVICE_DATA_HINT, SERVICE_SUPPORT_ERROR } from "../../lib/user-messages";
+import { SERVICE_SUPPORT_ERROR } from "../../lib/user-messages";
 
 function enrichRequests(data: DashboardPayload): ServiceRequestDto[] {
   const names = new Map(data.recipients.map((recipient) => [recipient.id, recipient.display_name]));
@@ -119,7 +119,7 @@ export function OperatorPanelClient({ data, operatorName }: OperatorPanelClientP
           </div>
           <span className="roundPill">
             <span className="dot" />
-            Awaiting batch approval
+            Ready for preflight
           </span>
           <div className="topActions">
             <button
@@ -136,7 +136,7 @@ export function OperatorPanelClient({ data, operatorName }: OperatorPanelClientP
               onClick={openPreflightForSelection}
               type="button"
             >
-              Approve auto-call round
+              Review selected round
             </button>
           </div>
         </header>
@@ -150,7 +150,7 @@ export function OperatorPanelClient({ data, operatorName }: OperatorPanelClientP
           </svg>
           <div>
             <strong>Automated daily round - not one-by-one dialling.</strong>{" "}
-            Coordinators prepare the list and approve the batch. CALL-E places eligible outbound calls automatically.
+            Coordinators prepare the list, run preflight, and start the eligible CALL-E automation queue.
             Supervised clients need review before inclusion; critical and blocked cases stay out of automation.
           </div>
         </div>
@@ -169,7 +169,7 @@ export function OperatorPanelClient({ data, operatorName }: OperatorPanelClientP
                 <span className="pipeJoin" />
                 <div className="pipeStep done"><span className="pipeN">2</span> Validated</div>
                 <span className="pipeJoin" />
-                <div className="pipeStep current"><span className="pipeN">3</span> Preflight / approve</div>
+                <div className="pipeStep current"><span className="pipeN">3</span> Preflight</div>
                 <span className="pipeJoin" />
                 <div className="pipeStep"><span className="pipeN">4</span> Auto-call</div>
                 <span className="pipeJoin" />
@@ -203,11 +203,11 @@ export function OperatorPanelClient({ data, operatorName }: OperatorPanelClientP
               onClick={openPreflightForSelection}
               type="button"
             >
-              Approve auto-call round
+              Review selected round
             </button>
-            <button className="button mutedButton" type="button" disabled>Start approved round</button>
+            <button className="button mutedButton" type="button" disabled>Start from preflight</button>
             <div className="note">
-              <strong>Start approved round</strong> enables only after preflight + batch approval.
+              <strong>Start from preflight</strong> is available after the safety confirmations on the preflight screen.
             </div>
           </div>
         </section>
@@ -236,7 +236,7 @@ export function OperatorPanelClient({ data, operatorName }: OperatorPanelClientP
             <div className="sectionHeader">
               <div>
                 <h2>Automation Queue</h2>
-                <p>Eligible recipients CALL-E will call automatically after batch approval.</p>
+                <p>Eligible recipients CALL-E will call automatically after preflight start.</p>
               </div>
             </div>
             <table className="table">
@@ -263,8 +263,8 @@ export function OperatorPanelClient({ data, operatorName }: OperatorPanelClientP
             </table>
             {selectedCalls.length === 0 && (
               <div className="emptyState">
-                <h3>No recipients ready for this view</h3>
-                <p>{EMPTY_SERVICE_DATA_HINT}</p>
+                <h3>No recipients selected for this round</h3>
+                <p>Select eligible recipients in the call list below, or use Select eligible to rebuild the automation queue.</p>
               </div>
             )}
           </section>

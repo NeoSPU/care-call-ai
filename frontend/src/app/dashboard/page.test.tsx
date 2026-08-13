@@ -198,7 +198,7 @@ describe("DashboardPage", () => {
     expect(screen.getByRole("heading", { name: "Safety Categories" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Condition Mix" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Recipient call list" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Approve auto-call round" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Review selected round" })).toBeNull();
     expect(screen.getByRole("link", { name: /Operator Panel/ }).getAttribute("href")).toBe("/dashboard/operator");
     expect(screen.getByRole("link", { name: /Urgent Callback/ })).toBeTruthy();
     expect(screen.getAllByText("3").length).toBeGreaterThan(0);
@@ -227,7 +227,7 @@ describe("DashboardPage", () => {
     expect(screen.getByText("Medicine")).toBeTruthy();
     expect(screen.getAllByText("4").length).toBeGreaterThan(0);
     expect(screen.getByText("backend-key-001")).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "Approve auto-call round" })[0]).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Review selected round" })[0]).toBeTruthy();
   });
 
   it("uses backend recipient names and excludes static demo recipients from live state", async () => {
@@ -256,7 +256,7 @@ describe("DashboardPage", () => {
     await waitFor(() => {
       expect((screen.getByLabelText("Include Avery Backend in auto-call") as HTMLInputElement).checked).toBe(false);
     });
-    expect(screen.getAllByText("No recipients ready for this view").length).toBeGreaterThan(0);
+    expect(screen.getByText("No recipients selected for this round")).toBeTruthy();
   });
 
   it("persists dashboard checkbox edits for preflight and later Daily round returns", async () => {
@@ -273,7 +273,7 @@ describe("DashboardPage", () => {
       expect(window.localStorage.getItem("carecall:selected-recipient-ids")).toBe(JSON.stringify([]));
     });
     expect(includeAvery.checked).toBe(false);
-    expect(screen.getAllByText("No recipients ready for this view").length).toBeGreaterThan(0);
+    expect(screen.getByText("No recipients selected for this round")).toBeTruthy();
   });
 
   it("enables a corrected non-critical recipient after safety route normalization", async () => {
@@ -342,7 +342,7 @@ describe("DashboardPage", () => {
 
     render(await OperatorPanelPage());
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Approve auto-call round" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Review selected round" })[0]);
 
     await waitFor(() => {
       expect(createBatch).toHaveBeenCalledWith({

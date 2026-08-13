@@ -14,6 +14,9 @@ from .safety import build_preflight_row
 class CallPlanPreview:
     recipient_id: str
     recipient_label: str
+    target_phone_e164: str
+    language: str
+    timezone: str
     masked_phone: str
     route: str
     ready: bool
@@ -29,10 +32,14 @@ def build_call_plan_preview(recipient: Recipient, call_date: str) -> CallPlanPre
     goal = compile_call_goal(recipient)
     key = idempotency_key(recipient, preflight, goal, call_date)
     blocked_reasons = tuple(issue.message for issue in preflight.issues)
+    target_phone = recipient.caregiver_phone_e164 if preflight.route == "caregiver" else recipient.phone_e164
 
     return CallPlanPreview(
         recipient_id=recipient.id,
         recipient_label=recipient.display_name,
+        target_phone_e164=target_phone,
+        language=recipient.care_profile.language,
+        timezone=recipient.care_profile.timezone,
         masked_phone=preflight.masked_phone,
         route=preflight.route,
         ready=preflight.ready and goal.route != "blocked",

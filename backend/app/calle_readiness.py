@@ -11,6 +11,8 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Callable
 
+from .calle_mcp_http import mcp_http_enabled, mcp_http_runner_from_env, settings_from_env
+
 
 SAFE_CALLE_ENV = {
     "CALLE_SOURCE": "skills_sh",
@@ -58,6 +60,9 @@ def default_runner(command: tuple[str, ...], env: dict[str, str]) -> subprocess.
 
 
 def check_calle_readiness(runner: CommandRunner = default_runner) -> CalleReadiness:
+    if runner is default_runner and mcp_http_enabled():
+        return check_configured_provider_readiness()
+
     checks = (
         _run_check("cli", ("calle", "--help"), runner),
         _run_check("auth", ("calle", "auth", "status"), runner),
@@ -73,6 +78,44 @@ def check_calle_readiness(runner: CommandRunner = default_runner) -> CalleReadin
         tools_available=tools_check.success and not missing_tools,
         missing_tools=missing_tools,
         checks=checks,
+    )
+
+
+def check_configured_provider_readiness(
+    env: dict[str, str] | None = None,
+    runner: CommandRunner | None = None,
+) -> CalleReadiness:
+    settings = settings_from_env(env)
+    missing = []
+    if not settings.server_url:
+        missing.append("CARECALL_CALLE_MCP_SERVER_URL")
+    if not settings.auth_token:
+        missing.append("CARECALL_CALLE_AUTH_TOKEN")
+    if missing:
+        return CalleReadiness(
+            cli_available=True,
+            authenticated=bool(settings.auth_token),
+            tools_available=False,
+            missing_tools=tuple(missing),
+            checks=(
+                CommandCheck(
+                    name="mcp_http_config",
+                    command=("carecall", "calle", "mcp_http_config"),
+                    success=False,
+                    error=", ".join(missing),
+                ),
+            ),
+        )
+
+    runner = mcp_http_runner_from_env(env) if runner is None else runner
+    tools_check = _run_check("mcp_http_tools", ("calle", "mcp", "tools"), runner)
+    missing_tools = _missing_tools(tools_check.output if tools_check.success else "")
+    return CalleReadiness(
+        cli_available=True,
+        authenticated=tools_check.success,
+        tools_available=tools_check.success and not missing_tools,
+        missing_tools=missing_tools,
+        checks=(tools_check,),
     )
 
 

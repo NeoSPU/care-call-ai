@@ -1,5 +1,6 @@
 import subprocess
 import unittest
+import json
 
 from app.approval import OperatorApproval
 from app.call_planning import build_call_plan_previews
@@ -112,6 +113,7 @@ class CalleExecutionTest(unittest.TestCase):
         self.assertEqual(batch.records[0].plan_id, "plan-123")
         self.assertEqual(batch.records[0].run_id, "run-456")
         self.assertEqual(runner.commands[0][0:2], ("calle", "plan_call"))
+        self.assertEqual(json.loads(runner.commands[0][2])["to_phone"], "+15550101234")
         self.assertEqual(runner.commands[1], ("calle", "run_call", "plan-123"))
 
     def test_fetch_call_result_parses_json(self):

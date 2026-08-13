@@ -14,6 +14,7 @@ from typing import Callable
 
 from .approval import OperatorApproval, validate_operator_approval
 from .call_planning import CallPlanPreview
+from .calle_mcp_http import mcp_http_enabled, mcp_http_runner_from_env
 from .calle_readiness import CalleReadiness, SAFE_CALLE_ENV, default_runner
 from .domain import StrEnum
 
@@ -57,21 +58,29 @@ def execute_approved_previews(
     previews: tuple[CallPlanPreview, ...],
     approval: OperatorApproval | None,
     readiness: CalleReadiness,
-    runner: ExecutionRunner = default_runner,
+    runner: ExecutionRunner | None = None,
 ) -> ExecutionBatch:
     blocked = _execution_blockers(previews, approval, readiness)
     if blocked:
         return ExecutionBatch(records=(), blocked_reasons=blocked)
 
+    runner = default_execution_runner() if runner is None else runner
     records = tuple(_execute_single_preview(preview, runner) for preview in previews if preview.ready)
     return ExecutionBatch(records=records)
 
 
-def fetch_call_result(run_id: str, runner: ExecutionRunner = default_runner) -> dict:
+def fetch_call_result(run_id: str, runner: ExecutionRunner | None = None) -> dict:
+    runner = default_execution_runner() if runner is None else runner
     result = runner(("calle", "get_call_run", run_id), SAFE_CALLE_ENV)
     if result.returncode != 0:
         raise RuntimeError(result.stderr or result.stdout or f"CALL-E get_call_run failed for {run_id}")
     return _json_or_text(result.stdout)
+
+
+def default_execution_runner() -> ExecutionRunner:
+    if mcp_http_enabled():
+        return mcp_http_runner_from_env()
+    return default_runner
 
 
 def _execution_blockers(
@@ -97,8 +106,12 @@ def _execute_single_preview(preview: CallPlanPreview, runner: ExecutionRunner) -
     plan_payload = {
         "idempotency_key": preview.idempotency_key,
         "recipient_id": preview.recipient_id,
+        "to_phone": preview.target_phone_e164,
         "route": preview.route,
         "prompt": preview.prompt_preview,
+        "goal": preview.prompt_preview,
+        "language": preview.language,
+        "timezone": preview.timezone,
     }
     plan_result = runner(("calle", "plan_call", json.dumps(plan_payload)), SAFE_CALLE_ENV)
     if plan_result.returncode != 0:
@@ -109,7 +122,9 @@ def _execute_single_preview(preview: CallPlanPreview, runner: ExecutionRunner) -
     if not plan_id:
         return _failed_record(preview, "CALL-E plan_call returned no plan_id.")
 
-    run_result = runner(("calle", "run_call", plan_id), SAFE_CALLE_ENV)
+    confirm_token = str(plan_response.get("confirm_token", ""))
+    run_command = ("calle", "run_call", plan_id, confirm_token) if confirm_token else ("calle", "run_call", plan_id)
+    run_result = runner(run_command, SAFE_CALLE_ENV)
     if run_result.returncode != 0:
         return _failed_record(preview, run_result.stderr or run_result.stdout, plan_id=plan_id)
 

@@ -255,6 +255,7 @@ function completeLiveGate() {
 
 describe("PreflightPage", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     window.localStorage.clear();
   });
 
@@ -274,7 +275,7 @@ describe("PreflightPage", () => {
     expect(within(readiness).getByText("Visible")).toBeTruthy();
     expect(within(readiness).getByText("Backend keyset")).toBeTruthy();
     expect(within(readiness).getByText("Issued")).toBeTruthy();
-    expect(within(readiness).getByText("Live approval")).toBeTruthy();
+    expect(within(readiness).getByText("Live start gate")).toBeTruthy();
     expect(within(readiness).getByText("Locked")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Dry run" }).getAttribute("aria-pressed")).toBe(
       "true",
@@ -369,27 +370,35 @@ describe("PreflightPage", () => {
     expect(await screen.findByText(/Dry run complete: 0 real calls placed/)).toBeTruthy();
   });
 
-  it("keeps live execution disabled until confirmations, exact phrase, exact keyset, and backend approval pass", async () => {
+  it("keeps live execution disabled until confirmations, exact phrase, and exact keyset are ready", async () => {
     await renderPreflight();
 
     fireEvent.click(screen.getByRole("button", { name: "Live auto-round" }));
-    expect(screen.getByRole("button", { name: "Start approved round" }).hasAttribute("disabled")).toBe(
+    expect(screen.getByRole("button", { name: "Start live CALL-E round" }).hasAttribute("disabled")).toBe(
       true,
     );
 
     fireEvent.change(screen.getByLabelText("Authorization phrase"), {
       target: { value: "EXECUTE LIVE CALL" },
     });
-    expect(screen.getByRole("button", { name: "Start approved round" }).hasAttribute("disabled")).toBe(
+    expect(screen.getByRole("button", { name: "Start live CALL-E round" }).hasAttribute("disabled")).toBe(
       true,
     );
 
     completeLiveGate();
+    expect(approvePreflight).not.toHaveBeenCalled();
+    expect(
+      (await screen.findByRole("button", { name: "Start live CALL-E round" })).hasAttribute("disabled"),
+    ).toBe(false);
+    expect(within(screen.getByLabelText("Final demo readiness")).getByText("Ready")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start live CALL-E round" }));
+
     expect(approvePreflight).toHaveBeenCalledWith({
       plan_id: "plan-api-001",
       approved_keys: ["backend-key-001"],
       operator: "carecall-coordinator",
-      note: "Approved from preflight UI.",
+      note: "Approved from preflight start action.",
       confirmations: {
         active_consent: true,
         care_route_match: true,
@@ -398,10 +407,20 @@ describe("PreflightPage", () => {
       },
       authorization_phrase: "EXECUTE LIVE CALLS",
     });
-    expect(
-      (await screen.findByRole("button", { name: "Start approved round" })).hasAttribute("disabled"),
-    ).toBe(false);
-    expect(within(screen.getByLabelText("Final demo readiness")).getByText("Ready")).toBeTruthy();
+    await waitFor(() => {
+      expect(requestLiveExecution).toHaveBeenCalledWith({
+        plan_id: "plan-api-001",
+        approval_id: "approval-api-001",
+        approved_keys: ["backend-key-001"],
+        confirmations: {
+          active_consent: true,
+          care_route_match: true,
+          exact_keyset: true,
+          real_side_effects: true,
+        },
+        authorization_phrase: "EXECUTE LIVE CALLS",
+      });
+    });
   });
 
   it("keeps the approval gate closed when backend reports a keyset or live gate rejection", async () => {
@@ -417,12 +436,11 @@ describe("PreflightPage", () => {
     render(await PreflightPage());
 
     completeLiveGate();
+    fireEvent.click(screen.getByRole("button", { name: "Start live CALL-E round" }));
 
-    expect(await screen.findByText("The service could not complete this action. Please contact support if the problem continues.")).toBeTruthy();
+    expect((await screen.findAllByText("The service could not complete this action. Please contact support if the problem continues.")).length).toBeGreaterThan(0);
     expect(screen.queryByText("Approved key set does not match the current backend preflight plan.")).toBeNull();
-    expect(screen.getByRole("button", { name: "Start approved round" }).hasAttribute("disabled")).toBe(
-      true,
-    );
+    expect(requestLiveExecution).not.toHaveBeenCalled();
 
     cleanup();
     vi.mocked(approvePreflight).mockResolvedValue({
@@ -444,7 +462,7 @@ describe("PreflightPage", () => {
     render(await PreflightPage());
 
     completeLiveGate();
-    fireEvent.click(await screen.findByRole("button", { name: "Start approved round" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start live CALL-E round" }));
 
     expect((await screen.findAllByText("The service could not complete this action. Please contact support if the problem continues.")).length).toBeGreaterThan(0);
     expect(screen.queryByText("CARECALL_LIVE_CALLS_ENABLED is not enabled.")).toBeNull();
@@ -477,7 +495,7 @@ describe("PreflightPage", () => {
     });
 
     completeLiveGate();
-    fireEvent.click(await screen.findByRole("button", { name: "Start approved round" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start live CALL-E round" }));
 
     expect(await screen.findByText(/Live execution accepted: 1 real calls placed/)).toBeTruthy();
     expect(screen.getByText("Run run-api-live-001")).toBeTruthy();

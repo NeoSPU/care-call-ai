@@ -467,6 +467,54 @@ class ServerCallApiTests(unittest.TestCase):
         self.assertEqual(len(imported_requests), 1)
         self.assertIn(("calle", "get_call_run", "provider-run-456"), result_runner.commands)
 
+    def test_live_execution_rejects_when_provider_returns_failed_record(self):
+        batch = create_batch_api_payload(
+            self.db_path,
+            {"selected_recipient_ids": ["rec-001"], "call_date": "2026-08-01"},
+        )
+        preflight = create_preflight_api_payload(self.db_path, {"batch_id": batch["batch"]["id"]})
+        approval = approve_preflight_api_payload(
+            self.db_path,
+            {
+                "plan_id": preflight["plan_id"],
+                "approved_keys": preflight["ready_keys"],
+                "operator": "carecall-coordinator",
+                "note": "Provider failure test.",
+                "confirmations": {
+                    "active_consent": True,
+                    "care_route_match": True,
+                    "exact_keyset": True,
+                    "real_side_effects": True,
+                },
+                "authorization_phrase": "EXECUTE LIVE CALLS",
+            },
+        )
+        live_runner = FakeRunner({("calle", "plan_call"): (1, "", "HTTP Error 401: Unauthorized")})
+
+        live = execute_live_api_payload(
+            self.db_path,
+            {
+                "plan_id": preflight["plan_id"],
+                "approval_id": approval["approval"]["id"],
+                "approved_keys": preflight["ready_keys"],
+                "confirmations": {
+                    "active_consent": True,
+                    "care_route_match": True,
+                    "exact_keyset": True,
+                    "real_side_effects": True,
+                },
+                "authorization_phrase": "EXECUTE LIVE CALLS",
+            },
+            env={"CARECALL_LIVE_CALLS_ENABLED": "true"},
+            readiness=ready(),
+            runner=live_runner,
+        )
+
+        self.assertFalse(live["accepted"])
+        self.assertEqual(live["real_calls_placed"], 0)
+        self.assertEqual(live["records"][0]["status"], "failed")
+        self.assertIn("401", " ".join(live["blocked_reasons"]))
+
 
 if __name__ == "__main__":
     unittest.main()

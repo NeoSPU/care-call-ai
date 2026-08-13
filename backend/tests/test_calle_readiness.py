@@ -1,7 +1,24 @@
+import os
 import subprocess
 import unittest
+from unittest.mock import patch
 
-from app.calle_readiness import SAFE_CALLE_ENV, check_calle_readiness
+from app.calle_readiness import SAFE_CALLE_ENV, check_calle_readiness, check_configured_provider_readiness
+
+
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = __import__("json").dumps(payload).encode("utf-8")
+        self.headers = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def read(self):
+        return self.payload
 
 
 class FakeRunner:
@@ -64,6 +81,44 @@ class CalleReadinessTest(unittest.TestCase):
         )
         check_calle_readiness(runner)
         self.assertNotIn(("calle", "run_call"), runner.commands)
+
+    def test_mcp_http_provider_uses_server_side_token_configuration(self):
+        env = {
+            "CARECALL_CALLE_PROVIDER": "mcp_http",
+            "CARECALL_CALLE_MCP_SERVER_URL": "https://call-e.example/mcp/openagent_oauth",
+            "CARECALL_CALLE_AUTH_TOKEN": "secret-token",
+        }
+        runner = FakeRunner({("calle", "mcp", "tools"): (0, "plan_call\nrun_call\nget_call_run", "")})
+        readiness = check_configured_provider_readiness(env, runner)
+        self.assertTrue(readiness.ready)
+        self.assertNotIn("secret-token", readiness.checks[0].output)
+
+    def test_default_readiness_switches_to_mcp_http_provider_when_configured(self):
+        env = {
+            **os.environ,
+            "CARECALL_CALLE_PROVIDER": "mcp_http",
+            "CARECALL_CALLE_MCP_SERVER_URL": "https://call-e.example/mcp/openagent_oauth",
+            "CARECALL_CALLE_AUTH_TOKEN": "secret-token",
+        }
+        def fake_urlopen(request, timeout):
+            body = __import__("json").loads(request.data.decode("utf-8"))
+            if body["method"] == "initialize":
+                return FakeResponse({"jsonrpc": "2.0", "id": body["id"], "result": {"protocolVersion": "2025-06-18"}})
+            if body["method"] == "notifications/initialized":
+                return FakeResponse({})
+            return FakeResponse(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "result": {"tools": [{"name": "plan_call"}, {"name": "run_call"}, {"name": "get_call_run"}]},
+                }
+            )
+
+        with patch.dict(os.environ, env, clear=True), patch("urllib.request.urlopen", fake_urlopen):
+            readiness = check_calle_readiness()
+
+        self.assertTrue(readiness.ready)
+        self.assertEqual(readiness.checks[0].name, "mcp_http_tools")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import {
   approvePreflight,
@@ -108,58 +108,14 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
   const planId = currentPreflight.plan_id ?? "";
   const oneReadyRecipient = readyKeys.length === 1;
   const answererRulesVisible = groups.ready.length > 0;
-  const canRequestBackendApproval = mode === "live" && Boolean(planId) && allConfirmed && exactPhrase;
-  const liveApproved =
+  const liveReady =
     mode === "live" &&
-    Boolean(approval?.id) &&
-    approvalErrors.length === 0 &&
+    Boolean(planId) &&
+    oneReadyRecipient &&
     allConfirmed &&
     exactPhrase &&
-    maxBatchCompliant;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function requestApproval() {
-      if (!canRequestBackendApproval) {
-        setApproval(null);
-        setApprovalErrors([]);
-        return;
-      }
-
-      try {
-        const response = await approvePreflight({
-          plan_id: planId,
-          approved_keys: readyKeys,
-          operator: operatorName,
-          note: "Approved from preflight UI.",
-          confirmations,
-          authorization_phrase: phrase,
-        });
-        if (cancelled) {
-          return;
-        }
-        setApproval(response.approval);
-        if (response.approved) {
-          setApprovalErrors([]);
-        } else {
-          logTechnicalError("Preflight approval rejected by backend.", response.blocked_reasons);
-          setApprovalErrors([SERVICE_SUPPORT_ERROR]);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          logTechnicalError("Preflight approval request failed.", error);
-          setApproval(null);
-          setApprovalErrors([SERVICE_SUPPORT_ERROR]);
-        }
-      }
-    }
-
-    void requestApproval();
-    return () => {
-      cancelled = true;
-    };
-  }, [canRequestBackendApproval, confirmations, operatorName, phrase, planId, readyKeys]);
+    maxBatchCompliant &&
+    approvalErrors.length === 0;
 
   function setConfirmation(key: ConfirmationKey, value: boolean) {
     setApproval(null);
@@ -232,15 +188,32 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
   }
 
   async function runLive() {
-    if (!planId || !approval?.id || !liveApproved) {
+    if (!planId || !liveReady) {
       return;
     }
     setBusy(true);
     setResult("");
+    setApproval(null);
+    setApprovalErrors([]);
     try {
+      const approvalResponse = await approvePreflight({
+        plan_id: planId,
+        approved_keys: readyKeys,
+        operator: operatorName,
+        note: "Approved from preflight start action.",
+        confirmations,
+        authorization_phrase: phrase,
+      });
+      if (!approvalResponse.approved || !approvalResponse.approval?.id) {
+        logTechnicalError("Preflight approval rejected by backend.", approvalResponse.blocked_reasons);
+        setApprovalErrors([SERVICE_SUPPORT_ERROR]);
+        setResult(SERVICE_SUPPORT_ERROR);
+        return;
+      }
+      setApproval(approvalResponse.approval);
       const response = await requestLiveExecution({
         plan_id: planId,
-        approval_id: approval.id,
+        approval_id: approvalResponse.approval.id,
         approved_keys: readyKeys,
         confirmations,
         authorization_phrase: phrase,
@@ -417,9 +390,9 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
               <span>Backend keyset</span>
               <strong>{planId && readyKeys.length > 0 ? "Issued" : "Pending"}</strong>
             </div>
-            <div className={`readinessRow ${readinessClass(liveApproved)}`}>
-              <span>Live approval</span>
-              <strong>{liveApproved ? "Ready" : "Locked"}</strong>
+            <div className={`readinessRow ${readinessClass(liveReady)}`}>
+              <span>Live start gate</span>
+              <strong>{liveReady ? "Ready" : "Locked"}</strong>
             </div>
           </div>
           <div className="keysetBox">
@@ -464,12 +437,12 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
               Run batch dry run (no dials)
             </button>
             <button
-              className={liveApproved ? "button dangerButton" : "button mutedButton"}
-              disabled={busy || !liveApproved}
+              className={liveReady ? "button dangerButton" : "button mutedButton"}
+              disabled={busy || !liveReady}
               onClick={runLive}
               type="button"
             >
-              Start approved round
+              Start live CALL-E round
             </button>
           </div>
           {liveRunId && (

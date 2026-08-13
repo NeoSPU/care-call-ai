@@ -431,6 +431,9 @@ def execute_live_api_payload(
         if batch.blocked_reasons:
             return execution_payload((), False, "live", batch.blocked_reasons, runner_commands)
         stored = repo.save_call_runs(plan.id, approval.id, batch.records, mode="live")
+        if not batch.success:
+            reasons = tuple(record.error for record in batch.records if record.error) or ("CALL-E execution failed.",)
+            return execution_payload(stored, False, "live", reasons, runner_commands=runner_commands)
         return execution_payload(stored, True, "live", runner_commands=runner_commands)
     finally:
         conn.close()
