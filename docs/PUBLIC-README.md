@@ -133,6 +133,162 @@ password: carecall-demo-password
 
 Use port `3001` for the frontend and `8001` for the backend.
 
+## Clean-Room Live-Call Verification
+
+Use this flow when you want to verify the full public repository path from a
+fresh checkout: backend in Docker, frontend running locally, and one real
+CALL-E call started only through the frontend approval UI.
+
+Prerequisites:
+
+- Docker Desktop is running.
+- Node.js and npm are installed.
+- You have a CALL-E account and a backend CALL-E MCP auth token.
+- You have consent or an approved outreach basis for the test phone number.
+
+### 1. Clone And Install
+
+```bash
+git clone https://github.com/NeoSPU/care-call-ai.git
+cd care-call-ai
+npm --prefix frontend install
+```
+
+### 2. Create `.env`
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` in your editor and fill the values there. Do not paste secrets into
+terminal prompts and do not export them in shell history.
+
+```bash
+nano .env
+```
+
+For a real live-call verification, `.env` must contain:
+
+```text
+CARECALL_BACKEND_API_TOKEN=<long random backend bearer token>
+CARECALL_OPERATOR_USERNAME=carecall-coordinator
+CARECALL_OPERATOR_PASSWORD=<operator login password>
+CARECALL_AUTH_SECRET=<long random frontend session signing secret>
+CARECALL_API_BASE_URL=http://127.0.0.1:8001
+CARECALL_LIVE_CALLS_ENABLED=true
+CARECALL_MAX_LIVE_BATCH_SIZE=1
+CARECALL_DEMO_MAX_PHONE=<approved E.164 test phone, for example +44...>
+CARECALL_CALLE_PROVIDER=mcp_http
+CARECALL_CALLE_MCP_SERVER_URL=https://seleven-mcp-sg.airudder.com/mcp/openagent_oauth
+CARECALL_CALLE_AUTH_TOKEN=<backend-only CALL-E MCP auth token>
+CARECALL_CALLE_REGION=GB
+CARECALL_CALLE_TIMEOUT_SECONDS=45
+```
+
+You can generate non-CALL-E local secrets and copy them into `.env`:
+
+```bash
+openssl rand -hex 32
+```
+
+Check that `.env` exists and is ignored by git:
+
+```bash
+test -f .env
+git check-ignore .env
+```
+
+The second command should print `.env`.
+
+### 3. Start Backend In Docker
+
+Use one terminal for the backend:
+
+```bash
+docker compose -f docker-compose.dev.yml up --build backend
+```
+
+In a second terminal, verify the backend. This reads the bearer token from
+`.env` and does not print it:
+
+```bash
+cd care-call-ai
+curl -fsS http://127.0.0.1:8001/health
+python3 - <<'PY'
+from pathlib import Path
+import json
+import urllib.request
+
+env = {}
+for line in Path(".env").read_text().splitlines():
+    if "=" in line and not line.lstrip().startswith("#"):
+        key, value = line.split("=", 1)
+        env[key] = value
+
+request = urllib.request.Request(
+    "http://127.0.0.1:8001/api/dashboard",
+    headers={"Authorization": "Bearer " + env["CARECALL_BACKEND_API_TOKEN"]},
+)
+with urllib.request.urlopen(request, timeout=10) as response:
+    payload = json.loads(response.read().decode("utf-8"))
+print(json.dumps(payload["summary"], indent=2))
+PY
+```
+
+### 4. Start Frontend Locally
+
+Use another terminal for the frontend:
+
+```bash
+cd care-call-ai
+python3 scripts/run_frontend_from_env.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:3001/dashboard
+```
+
+Use the operator username and password you placed in `.env`.
+
+Do not authorize real calls in the terminal. The only live-call authorization is
+inside the frontend: four checkboxes plus the exact phrase.
+
+### 5. Place One Real CALL-E Call From The UI
+
+Do not call backend execution endpoints manually and do not authorize calls in
+the terminal. Use the app:
+
+1. Log in.
+2. Open `/dashboard/operator`.
+3. Select exactly one eligible recipient. For the live smoke test, use the
+   runtime `Max Neous` card injected by `CARECALL_DEMO_MAX_PHONE`.
+4. Click the button that opens/runs preflight.
+5. On `/dashboard/preflight`, confirm the list contains exactly one ready call.
+6. Run dry run first. It must report `0` real calls placed.
+7. Switch to live mode.
+8. Check all four live confirmations.
+9. Type exactly:
+
+   ```text
+   EXECUTE LIVE CALLS
+   ```
+
+10. Start the live round from the frontend button.
+11. Wait for the CALL-E call to finish.
+12. Click `Import latest CALL-E result`.
+13. Open `/dashboard/orders/print` to verify whether service requests/orders
+    were created from the imported result.
+
+### 6. Stop The Local Verification Stack
+
+```bash
+docker compose -f docker-compose.dev.yml down
+```
+
+Stop the local frontend terminal with `Ctrl-C`.
+
 ## Live CALL-E Flow
 
 Real calls are started only from the app:
