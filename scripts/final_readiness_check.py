@@ -53,10 +53,8 @@ def file_checks(root: Path, required_files: tuple[str, ...]) -> list[ReadinessRe
 
 
 def safety_env_checks(env: dict[str, str]) -> list[ReadinessResult]:
-    live_enabled = env.get("CARECALL_LIVE_CALLS_ENABLED", "false").lower() == "true"
     max_batch = env.get("CARECALL_MAX_LIVE_BATCH_SIZE", "1")
     return [
-        ReadinessResult("fail" if live_enabled else "ok", "CARECALL_LIVE_CALLS_ENABLED is not true for readiness checks"),
         ReadinessResult("ok" if max_batch == "1" else "fail", "CARECALL_MAX_LIVE_BATCH_SIZE is 1"),
     ]
 

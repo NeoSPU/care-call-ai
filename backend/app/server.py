@@ -33,12 +33,7 @@ from .calle_execution import CallRunRecord, CallRunStatus, execute_approved_prev
 from .calle_readiness import CalleReadiness, check_calle_readiness
 from .domain import (
     AuthorizedContact,
-    CallSuitability,
-    CareProfile,
     Condition,
-    Consent,
-    ConsentStatus,
-    Recipient,
     SafetyCategory,
     Severity,
 )
@@ -125,49 +120,9 @@ def initialize_database(db_path: str | Path = DEFAULT_DB_PATH, env: dict[str, st
         repo = Repository(conn)
         if not repo.list_recipients():
             seed_database(repo, load_seed_recipients(DEFAULT_SEED_PATH))
-        _apply_runtime_demo_overrides(repo, env)
         repo.reconcile_safety_routes()
     finally:
         conn.close()
-
-
-def _apply_runtime_demo_overrides(repo: Repository, env: dict[str, str]) -> None:
-    phone = env.get("CARECALL_DEMO_MAX_PHONE", "").strip()
-    if not phone:
-        return
-    repo.upsert_recipient(
-        Recipient(
-            id="rec-demo-max",
-            display_name="Max Neous",
-            phone_e164=phone,
-            consent=Consent(
-                status=ConsentStatus.EXPLICIT_CONSENT,
-                evidence="Runtime demo participant configured through CARECALL_DEMO_MAX_PHONE; do not commit real numbers.",
-            ),
-            care_profile=CareProfile(
-                condition=Condition.ALZHEIMER,
-                severity=Severity.MILD,
-                language="en",
-                timezone="Europe/London",
-                call_suitability=CallSuitability.DIRECT_CALL_OK,
-                communication_rules=(
-                    "short_simple_sentences",
-                    "ask_speaker_identity_first",
-                    "do_not_test_memory",
-                    "offer_simple_choices",
-                ),
-            ),
-            authorized_contacts=(
-                AuthorizedContact(
-                    name="Marija Neous",
-                    relationship="trusted_contact",
-                    can_answer_intake=True,
-                    preferred_goodbye="All the best, Ms Marija.",
-                ),
-            ),
-            notes="Runtime-only fictional demo card for the final CALL-E test; phone comes from local env.",
-        )
-    )
 
 
 def dashboard_api_payload(db_path: str | Path = DEFAULT_DB_PATH, call_date: str = "2026-08-01") -> dict[str, Any]:
@@ -400,8 +355,6 @@ def execute_live_api_payload(
         submitted_keys = payload.get("approved_keys")
         if submitted_keys is not None and tuple(sorted(submitted_keys)) != tuple(sorted(plan.ready_keys)):
             blockers.append("Live execution requires the current exact keyset.")
-        if env.get("CARECALL_LIVE_CALLS_ENABLED") != "true":
-            blockers.append("Live calls are disabled unless CARECALL_LIVE_CALLS_ENABLED=true.")
         if not _all_confirmations(payload.get("confirmations", {})):
             blockers.append("All four confirmations are required for live execution.")
         if str(payload.get("authorization_phrase", "")) != LIVE_AUTHORIZATION_PHRASE:

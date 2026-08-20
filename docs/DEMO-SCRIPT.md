@@ -13,14 +13,17 @@ numbers. For practice runs, use the no-call preflight only.
    care profiles, and call suitability.
 4. Keep the first real demo batch small: one non-critical auto-call recipient is
    enough to prove the path without wasting the 20 free calls.
-5. Copy `.env.example` to `.env` once and fill live CALL-E values there only
-   for the final approved demo. Start the app:
+5. Copy `.env.example` to `.env` once and fill backend CALL-E secrets there
+   only for the final approved demo.
+6. Edit the approved participant phone in the recipient card, not in `.env`.
+7. Start the backend and frontend:
 
    ```bash
    make demo-up
+   python3 scripts/run_frontend_from_env.py
    ```
 
-6. Open `http://localhost:3000/dashboard`.
+8. Open `http://localhost:3000/dashboard`.
 
 ## 0:00-0:30 Opening
 
@@ -99,6 +102,8 @@ hackathon grants 20 free calls after registration.
 Show:
 
 - The approved recipient.
+- The recipient card containing the approved test number, with the full number
+  hidden during recording.
 - The generated condition-aware call goal.
 - The four live confirmation checks and exact authorization phrase.
 - The stored run id and the CALL-E provider status.

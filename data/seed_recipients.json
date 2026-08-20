@@ -129,7 +129,7 @@
     "phone_e164": "+15550101006",
     "consent": {
       "status": "explicit_consent",
-      "evidence": "Fictional seed record for dry-run demo only; real demo phone must be supplied through CARECALL_DEMO_MAX_PHONE."
+      "evidence": "Fictional seed record for demo only; edit the recipient card before any approved real call."
     },
     "care_profile": {
       "condition": "alzheimer",

@@ -38,7 +38,8 @@ Before recording a real call:
 - confirm CALL-E auth using local CALL-E tooling;
 - confirm the approved participant or authorized answerer;
 - ensure the recipient card lists anyone who may answer;
-- keep real phone numbers only in local env, never in git;
+- keep real phone numbers only in local recipient-card data, never in git or
+  `.env`;
 - keep `CARECALL_MAX_LIVE_BATCH_SIZE=1`;
 - use the exact live authorization phrase only for the approved final call.
 

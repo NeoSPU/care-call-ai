@@ -147,7 +147,7 @@ function mockPreflightLoad() {
     accepted: false,
     mode: "live",
     real_calls_placed: 0,
-    blocked_reasons: ["CARECALL_LIVE_CALLS_ENABLED is not enabled."],
+    blocked_reasons: ["CALL-E readiness check failed."],
     records: [],
   });
   vi.mocked(importRunResult).mockResolvedValue({
@@ -453,7 +453,7 @@ describe("PreflightPage", () => {
       accepted: false,
       mode: "live",
       real_calls_placed: 0,
-      blocked_reasons: ["CARECALL_LIVE_CALLS_ENABLED is not enabled."],
+      blocked_reasons: ["CALL-E readiness check failed."],
       records: [],
     });
     vi.mocked(getDashboardData).mockResolvedValue(dashboardDto);
@@ -465,7 +465,7 @@ describe("PreflightPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Start live CALL-E round" }));
 
     expect((await screen.findAllByText("The service could not complete this action. Please contact support if the problem continues.")).length).toBeGreaterThan(0);
-    expect(screen.queryByText("CARECALL_LIVE_CALLS_ENABLED is not enabled.")).toBeNull();
+    expect(screen.queryByText("CALL-E readiness check failed.")).toBeNull();
   });
 
   it("lets the operator import a terminal live CALL-E result into generated service requests", async () => {

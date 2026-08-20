@@ -63,25 +63,19 @@ class LiveExecutionGuardTests(unittest.TestCase):
         )
         return preflight, approval
 
-    def test_live_rejects_without_env_flag_readiness_confirmations_phrase_and_exact_keyset(self):
+    def test_live_rejects_without_readiness_confirmations_phrase_and_exact_keyset(self):
         preflight, approval = self._approved_plan()
         runner = FakeRunner()
 
         attempts = [
             (
-                {"CARECALL_LIVE_CALLS_ENABLED": "false"},
-                {"confirmations": _confirmations(), "authorization_phrase": "EXECUTE LIVE CALLS"},
-                CalleReadiness(True, True, True),
-                "live calls are disabled",
-            ),
-            (
-                {"CARECALL_LIVE_CALLS_ENABLED": "true"},
+                {},
                 {"confirmations": _confirmations(), "authorization_phrase": "EXECUTE LIVE CALLS"},
                 CalleReadiness(False, True, True),
                 "readiness",
             ),
             (
-                {"CARECALL_LIVE_CALLS_ENABLED": "true"},
+                {},
                 {
                     "confirmations": {**_confirmations(), "real_side_effects": False},
                     "authorization_phrase": "EXECUTE LIVE CALLS",
@@ -90,13 +84,13 @@ class LiveExecutionGuardTests(unittest.TestCase):
                 "four confirmations",
             ),
             (
-                {"CARECALL_LIVE_CALLS_ENABLED": "true"},
+                {},
                 {"confirmations": _confirmations(), "authorization_phrase": "EXECUTE CALLS"},
                 CalleReadiness(True, True, True),
                 "authorization phrase",
             ),
             (
-                {"CARECALL_LIVE_CALLS_ENABLED": "true"},
+                {},
                 {
                     "confirmations": _confirmations(),
                     "authorization_phrase": "EXECUTE LIVE CALLS",
@@ -137,7 +131,7 @@ class LiveExecutionGuardTests(unittest.TestCase):
                 "confirmations": _confirmations(),
                 "authorization_phrase": "EXECUTE LIVE CALLS",
             },
-            env={"CARECALL_LIVE_CALLS_ENABLED": "true"},
+            env={},
             readiness=CalleReadiness(True, True, True),
             runner=runner,
         )
@@ -157,7 +151,7 @@ class LiveExecutionGuardTests(unittest.TestCase):
                 "confirmations": _confirmations(),
                 "authorization_phrase": "EXECUTE LIVE CALLS",
             },
-            env={"CARECALL_LIVE_CALLS_ENABLED": "true", "CARECALL_MAX_LIVE_BATCH_SIZE": "3"},
+            env={"CARECALL_MAX_LIVE_BATCH_SIZE": "3"},
             readiness=CalleReadiness(True, True, True),
             runner=runner,
         )

@@ -85,9 +85,7 @@ in your hosting provider's secret manager. For live demos, the backend needs:
 
 ```text
 CARECALL_BACKEND_API_TOKEN=...
-CARECALL_LIVE_CALLS_ENABLED=true
 CARECALL_MAX_LIVE_BATCH_SIZE=1
-CARECALL_DEMO_MAX_PHONE=+44...
 CARECALL_CALLE_PROVIDER=mcp_http
 CARECALL_CALLE_MCP_SERVER_URL=https://seleven-mcp-sg.airudder.com/mcp/openagent_oauth
 CARECALL_CALLE_AUTH_TOKEN=...
@@ -114,7 +112,6 @@ The default app path is safe:
 Care Call AI can place real outbound calls only when all live-call gates pass:
 
 - CALL-E is installed and authenticated;
-- backend live calls are explicitly enabled;
 - the live batch size remains intentionally small;
 - the operator has reviewed the exact current preflight list;
 - the approval keyset still matches the current planned calls;
@@ -122,9 +119,10 @@ Care Call AI can place real outbound calls only when all live-call gates pass:
   phrase;
 - every participant has consent or an approved outreach basis.
 
-For the final approved real-call demo, start the app with `make demo-up`, then
-complete live mode, four confirmations, and the exact authorization phrase in
-the frontend.
+For the final approved real-call demo, start the backend with `make demo-up`,
+edit the approved participant's phone number in the frontend recipient card,
+then complete live mode, four confirmations, and the exact authorization phrase
+in the frontend.
 
 ## Cancellation And Stop Conditions
 

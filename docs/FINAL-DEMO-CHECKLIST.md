@@ -8,8 +8,8 @@ Practice runs must stop at dry run.
 - [ ] The participant or caregiver/staff contact is approved for the recording.
 - [ ] Anyone who may answer the phone is listed as an authorized answerer on
       the recipient card, or the call must stop if they answer.
-- [ ] If using the `Max Neous` demo card, the real test phone is supplied only
-      through `CARECALL_DEMO_MAX_PHONE` and is not committed.
+- [ ] If using the `Max Neous` demo card, the operator has edited the approved
+      real test phone in the frontend recipient card and saved it.
 - [ ] Consent or approved outreach basis is documented outside the repository.
 - [ ] The participant knows this is a real outbound CALL-E call.
 - [ ] The participant can safely stop the call at any time.
@@ -52,7 +52,9 @@ Confirm before continuing:
 
 - [ ] Backend is on port `8000`.
 - [ ] Frontend is on port `3000`.
-- [ ] `make demo-up` started the backend and frontend successfully.
+- [ ] `make demo-up` started the backend successfully.
+- [ ] `python3 scripts/run_frontend_from_env.py` started the frontend
+      successfully.
 - [ ] The selected call list contains exactly one eligible demo recipient.
 - [ ] The preflight row shows the expected authorized answerer rule.
 - [ ] Critical, blocked, staff-only, and unreviewed special-handling recipients
@@ -61,27 +63,26 @@ Confirm before continuing:
 
 ## 4. Final Live Gate
 
-For the final approved real call only, configure live CALL-E values once in
-`.env` before starting the app:
+For the final approved real call only, configure backend CALL-E values once in
+`.env` before starting the app. The approved phone number is edited in the
+recipient card, not stored in `.env`.
 
 ```text
-CARECALL_LIVE_CALLS_ENABLED=true
 CARECALL_MAX_LIVE_BATCH_SIZE=1
-CARECALL_DEMO_MAX_PHONE=+44...
 CARECALL_CALLE_PROVIDER=mcp_http
 CARECALL_CALLE_MCP_SERVER_URL=https://seleven-mcp-sg.airudder.com/mcp/openagent_oauth
 CARECALL_CALLE_AUTH_TOKEN=...
 CARECALL_CALLE_REGION=GB
 ```
 
-Then start with `make demo-up`. All live-call approval happens in the frontend.
+Then start the backend with `make demo-up` and the frontend with
+`python3 scripts/run_frontend_from_env.py`. All live-call approval happens in
+the frontend.
 
 Live execution is allowed only when all of these are true:
 
-- [ ] `CARECALL_LIVE_CALLS_ENABLED=true` is set for the backend process.
 - [ ] `CARECALL_MAX_LIVE_BATCH_SIZE=1` is set or the default value is in use.
-- [ ] `CARECALL_DEMO_MAX_PHONE` is set only in `.env` or deployment secrets
-      when the `Max Neous` runtime demo card is the selected live recipient.
+- [ ] The selected recipient card contains the approved real E.164 phone number.
 - [ ] `CARECALL_CALLE_AUTH_TOKEN` is set only for the backend process.
 - [ ] The selected ready key set still matches the backend preflight key set.
 - [ ] The operator has checked all four live confirmation boxes:

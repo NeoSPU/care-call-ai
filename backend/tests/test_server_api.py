@@ -369,7 +369,7 @@ class ServerCallApiTests(unittest.TestCase):
                 },
                 "authorization_phrase": "EXECUTE LIVE CALLS",
             },
-            env={"CARECALL_LIVE_CALLS_ENABLED": "true"},
+            env={},
         )
 
         self.assertFalse(dry_run["accepted"])
@@ -421,7 +421,7 @@ class ServerCallApiTests(unittest.TestCase):
                 },
                 "authorization_phrase": "EXECUTE LIVE CALLS",
             },
-            env={"CARECALL_LIVE_CALLS_ENABLED": "true"},
+            env={},
             readiness=ready(),
             runner=live_runner,
         )
@@ -505,7 +505,7 @@ class ServerCallApiTests(unittest.TestCase):
                 },
                 "authorization_phrase": "EXECUTE LIVE CALLS",
             },
-            env={"CARECALL_LIVE_CALLS_ENABLED": "true"},
+            env={},
             readiness=ready(),
             runner=live_runner,
         )

@@ -23,19 +23,19 @@ class FinalReadinessCheckTests(unittest.TestCase):
     def test_readiness_passes_with_submission_warnings_for_manual_links(self):
         results = final_readiness_check.run_checks(
             self.make_root(),
-            {"CARECALL_LIVE_CALLS_ENABLED": "false", "CARECALL_MAX_LIVE_BATCH_SIZE": "1"},
+            {"CARECALL_MAX_LIVE_BATCH_SIZE": "1"},
         )
 
         self.assertFalse([result for result in results if result.level == "fail"])
         self.assertEqual(3, len([result for result in results if result.level == "warn"]))
 
-    def test_readiness_fails_when_live_calls_are_enabled_for_no_call_check(self):
+    def test_readiness_fails_when_live_batch_size_is_above_one(self):
         results = final_readiness_check.run_checks(
             self.make_root(),
-            {"CARECALL_LIVE_CALLS_ENABLED": "true", "CARECALL_MAX_LIVE_BATCH_SIZE": "1"},
+            {"CARECALL_MAX_LIVE_BATCH_SIZE": "2"},
         )
 
-        self.assertTrue(any("LIVE_CALLS_ENABLED" in result.message for result in results if result.level == "fail"))
+        self.assertTrue(any("MAX_LIVE_BATCH_SIZE" in result.message for result in results if result.level == "fail"))
 
     def test_readiness_fails_when_required_file_is_missing(self):
         root = self.make_root()
@@ -43,7 +43,7 @@ class FinalReadinessCheckTests(unittest.TestCase):
 
         results = final_readiness_check.run_checks(
             root,
-            {"CARECALL_LIVE_CALLS_ENABLED": "false", "CARECALL_MAX_LIVE_BATCH_SIZE": "1"},
+            {"CARECALL_MAX_LIVE_BATCH_SIZE": "1"},
         )
 
         self.assertTrue(any(result.message == "docs/FINAL-DEMO-CHECKLIST.md exists" for result in results if result.level == "fail"))
@@ -51,7 +51,7 @@ class FinalReadinessCheckTests(unittest.TestCase):
     def test_readiness_does_not_require_private_planning_or_deployment_docs(self):
         results = final_readiness_check.run_checks(
             self.make_root(),
-            {"CARECALL_LIVE_CALLS_ENABLED": "false", "CARECALL_MAX_LIVE_BATCH_SIZE": "1"},
+            {"CARECALL_MAX_LIVE_BATCH_SIZE": "1"},
         )
 
         failures = [result for result in results if result.level == "fail"]

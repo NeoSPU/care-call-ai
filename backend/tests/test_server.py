@@ -58,15 +58,15 @@ class ServerApiPayloadTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["service_requests"]), 1)
         self.assertNotIn("+15550101001", repr(payload))
 
-    def test_runtime_demo_max_override_adds_masked_fictional_recipient(self):
-        initialize_database(self.db_path, env={"CARECALL_DEMO_MAX_PHONE": "+447700900123"})
+    def test_demo_max_seed_recipient_uses_card_phone_not_env_override(self):
+        initialize_database(self.db_path, env={})
         payload = dashboard_api_payload(self.db_path, "2026-08-01")
 
         max_preview = next(item for item in payload["planned_calls"] if item["recipient_id"] == "rec-demo-max")
         self.assertEqual(max_preview["recipient_label"], "Max Neous")
-        self.assertEqual(max_preview["masked_phone"], "+4*******0123")
+        self.assertEqual(max_preview["masked_phone"], "+1******1006")
         self.assertEqual(max_preview["authorized_contacts"][0]["name"], "Marija Neous")
-        self.assertNotIn("+447700900123", repr(payload))
+        self.assertNotIn("+15550101006", repr(payload))
 
     def test_recipient_api_payload_returns_detail_contract(self):
         payload = recipient_api_payload(self.db_path, "rec-003")
