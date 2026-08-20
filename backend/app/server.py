@@ -702,7 +702,7 @@ class CareCallHandler(BaseHTTPRequestHandler):
 
     def _send_cors_headers(self) -> None:
         origin = self.headers.get("Origin")
-        allowed_origins = {"http://127.0.0.1:3001", "http://localhost:3001"}
+        allowed_origins = {"http://127.0.0.1:3000", "http://localhost:3000"}
         if origin in allowed_origins:
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
@@ -825,5 +825,5 @@ def _normalized_provider_result(payload: dict[str, Any], provider_status: str) -
 if __name__ == "__main__":
     run(
         host=os.environ.get("CARECALL_BACKEND_HOST", "0.0.0.0"),
-        port=int(os.environ.get("CARECALL_BACKEND_PORT", "8001")),
+        port=int(os.environ.get("CARECALL_BACKEND_PORT", "8000")),
     )

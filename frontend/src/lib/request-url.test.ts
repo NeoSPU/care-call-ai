@@ -17,10 +17,10 @@ describe("absoluteRequestUrl", () => {
   it("uses the public host header for local Docker port mapping", () => {
     const request = new Request("http://0.0.0.0:3000/api/auth/login", {
       headers: {
-        host: "127.0.0.1:3001",
+        host: "127.0.0.1:3000",
       },
     });
 
-    expect(absoluteRequestUrl(request, "/dashboard").toString()).toBe("http://127.0.0.1:3001/dashboard");
+    expect(absoluteRequestUrl(request, "/dashboard").toString()).toBe("http://127.0.0.1:3000/dashboard");
   });
 });

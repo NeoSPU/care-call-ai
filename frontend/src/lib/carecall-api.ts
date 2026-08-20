@@ -20,7 +20,7 @@ export function carecallApiBaseUrl() {
   if (typeof window !== "undefined") {
     return "/api/carecall";
   }
-  return process.env.CARECALL_API_BASE_URL ?? "http://127.0.0.1:8001";
+  return process.env.CARECALL_API_BASE_URL ?? "http://127.0.0.1:8000";
 }
 
 function backendApiCredential() {

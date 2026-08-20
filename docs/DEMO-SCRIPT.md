@@ -20,7 +20,7 @@ numbers. For practice runs, use the no-call preflight only.
    make demo-up
    ```
 
-6. Open `http://localhost:3001/dashboard`.
+6. Open `http://localhost:3000/dashboard`.
 
 ## 0:00-0:30 Opening
 
@@ -60,7 +60,7 @@ Point out examples:
 
 ## 1:10-1:45 No-Call Preflight
 
-Open `http://localhost:3001/dashboard/preflight`.
+Open `http://localhost:3000/dashboard/preflight`.
 
 Explain:
 
@@ -76,7 +76,7 @@ Run:
 
 ```bash
 curl -H "Authorization: Bearer ${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}" \
-  http://localhost:8001/preflight
+  http://localhost:8000/preflight
 ```
 
 Then show:
@@ -118,7 +118,7 @@ Show:
 - Service Requests lanes.
 - Urgent medication/review examples.
 - Printable service order page at
-  `http://localhost:3001/dashboard/orders/print`.
+  `http://localhost:3000/dashboard/orders/print`.
 
 Close with:
 

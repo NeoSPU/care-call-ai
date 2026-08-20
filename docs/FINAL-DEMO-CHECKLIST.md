@@ -44,14 +44,14 @@ make demo-up
 
 Open:
 
-- dashboard: `http://localhost:3001/dashboard`
-- preflight: `http://localhost:3001/dashboard/preflight`
-- print orders: `http://localhost:3001/dashboard/orders/print`
+- dashboard: `http://localhost:3000/dashboard`
+- preflight: `http://localhost:3000/dashboard/preflight`
+- print orders: `http://localhost:3000/dashboard/orders/print`
 
 Confirm before continuing:
 
-- [ ] Backend is on port `8001`.
-- [ ] Frontend is on port `3001`.
+- [ ] Backend is on port `8000`.
+- [ ] Frontend is on port `3000`.
 - [ ] `make demo-up` started the backend and frontend successfully.
 - [ ] The selected call list contains exactly one eligible demo recipient.
 - [ ] The preflight row shows the expected authorized answerer rule.

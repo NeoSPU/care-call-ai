@@ -42,7 +42,7 @@ service request handoff.
 
 ## Setup
 
-Care Call AI reserves host ports `3001` and `8001`.
+Care Call AI reserves host ports `3000` and `8000`.
 
 ```bash
 cp .env.example .env
@@ -51,8 +51,8 @@ make demo-up
 
 Open:
 
-- app: `http://localhost:3001/dashboard`
-- backend health: `http://localhost:8001/health`
+- app: `http://localhost:3000/dashboard`
+- backend health: `http://localhost:8000/health`
 
 Default local demo login:
 

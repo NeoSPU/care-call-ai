@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_BASE_URL = process.env.CARECALL_API_BASE_URL ?? "http://127.0.0.1:8001";
+const BACKEND_BASE_URL = process.env.CARECALL_API_BASE_URL ?? "http://127.0.0.1:8000";
 const BACKEND_API_CREDENTIAL =
   process.env.CARECALL_BACKEND_API_TOKEN ?? (process.env.NODE_ENV === "production" ? "" : "carecall-local-backend-token");
 

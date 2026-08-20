@@ -14,7 +14,7 @@ services:
       CARECALL_CALLE_REGION: "${CARECALL_CALLE_REGION:-GB}"
       CARECALL_CALLE_TIMEOUT_SECONDS: "${CARECALL_CALLE_TIMEOUT_SECONDS:-45}"
     ports:
-      - "8001:8000"
+      - "8000:8000"
 
   frontend:
     build:
@@ -28,6 +28,6 @@ services:
       CARECALL_OPERATOR_PASSWORD: "${CARECALL_OPERATOR_PASSWORD:-carecall-demo-password}"
       CARECALL_BACKEND_API_TOKEN: "${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}"
     ports:
-      - "3001:3001"
+      - "3000:3000"
     depends_on:
       - backend

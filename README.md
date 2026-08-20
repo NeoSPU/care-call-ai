@@ -121,7 +121,7 @@ make demo-up
 Open:
 
 ```text
-http://localhost:3001/dashboard
+http://localhost:3000/dashboard
 ```
 
 Login uses the values from `.env`. With the sample file:
@@ -131,7 +131,7 @@ operator: carecall-coordinator
 password: carecall-demo-password
 ```
 
-Use port `3001` for the frontend and `8001` for the backend.
+Use port `3000` for the frontend and `8000` for the backend.
 
 ## Clean-Room Live-Call Verification
 
@@ -174,7 +174,7 @@ CARECALL_BACKEND_API_TOKEN=<long random backend bearer token>
 CARECALL_OPERATOR_USERNAME=carecall-coordinator
 CARECALL_OPERATOR_PASSWORD=<operator login password>
 CARECALL_AUTH_SECRET=<long random frontend session signing secret>
-CARECALL_API_BASE_URL=http://127.0.0.1:8001
+CARECALL_API_BASE_URL=http://127.0.0.1:8000
 CARECALL_LIVE_CALLS_ENABLED=true
 CARECALL_MAX_LIVE_BATCH_SIZE=1
 CARECALL_DEMO_MAX_PHONE=<approved E.164 test phone, for example +44...>
@@ -213,7 +213,7 @@ In a second terminal, verify the backend. This reads the bearer token from
 
 ```bash
 cd care-call-ai
-curl -fsS http://127.0.0.1:8001/health
+curl -fsS http://127.0.0.1:8000/health
 python3 - <<'PY'
 from pathlib import Path
 import json
@@ -226,7 +226,7 @@ for line in Path(".env").read_text().splitlines():
         env[key] = value
 
 request = urllib.request.Request(
-    "http://127.0.0.1:8001/api/dashboard",
+    "http://127.0.0.1:8000/api/dashboard",
     headers={"Authorization": "Bearer " + env["CARECALL_BACKEND_API_TOKEN"]},
 )
 with urllib.request.urlopen(request, timeout=10) as response:
@@ -247,7 +247,7 @@ python3 scripts/run_frontend_from_env.py
 Open:
 
 ```text
-http://127.0.0.1:3001/dashboard
+http://127.0.0.1:3000/dashboard
 ```
 
 Use the operator username and password you placed in `.env`.

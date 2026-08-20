@@ -196,7 +196,7 @@ class ServerApiPayloadTests(unittest.TestCase):
 
 class _HeaderCaptureHandler(CareCallHandler):
     def __init__(self):
-        self.headers = {"Origin": "http://127.0.0.1:3001"}
+        self.headers = {"Origin": "http://127.0.0.1:3000"}
         self.wfile = BytesIO()
         self.status = None
         self.sent_headers = []
@@ -218,7 +218,7 @@ class ServerCorsTests(unittest.TestCase):
         handler.do_OPTIONS()
 
         self.assertEqual(handler.status, 204)
-        self.assertIn(("Access-Control-Allow-Origin", "http://127.0.0.1:3001"), handler.sent_headers)
+        self.assertIn(("Access-Control-Allow-Origin", "http://127.0.0.1:3000"), handler.sent_headers)
         self.assertIn(("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS"), handler.sent_headers)
         self.assertIn(("Access-Control-Allow-Headers", "Authorization, Content-Type"), handler.sent_headers)
 

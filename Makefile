@@ -14,7 +14,7 @@ help:
 	@printf '%s\n' '  make frontend-test       Run frontend Vitest suite'
 	@printf '%s\n' '  make frontend-build      Build the Next.js frontend'
 	@printf '%s\n' '  make docker-config       Validate demo Docker compose config'
-	@printf '%s\n' '  make demo-up             Start demo stack on frontend 3001 and backend 8001'
+	@printf '%s\n' '  make demo-up             Start demo stack on frontend 3000 and backend 8000'
 	@printf '%s\n' '  make demo-smoke          Check demo URLs after make demo-up'
 	@printf '%s\n' '  make demo-auth-smoke     Check local login and protected frontend API proxy'
 	@printf '%s\n' '  make demo-down           Stop the demo stack'
@@ -46,19 +46,19 @@ demo-down:
 	docker compose -f docker-compose.dev.yml down
 
 demo-smoke:
-	curl -fsS http://127.0.0.1:8001/health >/dev/null
-	curl -fsS -H "Authorization: Bearer $${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}" http://127.0.0.1:8001/preflight >/dev/null
-	curl -fsSI http://127.0.0.1:3001/dashboard >/dev/null
-	curl -fsSI http://127.0.0.1:3001/dashboard/preflight >/dev/null
-	curl -fsSI http://127.0.0.1:3001/dashboard/orders/print >/dev/null
-	@printf '%s\n' 'Care Call AI demo smoke passed on frontend 3001 and backend 8001.'
+	curl -fsS http://127.0.0.1:8000/health >/dev/null
+	curl -fsS -H "Authorization: Bearer $${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}" http://127.0.0.1:8000/preflight >/dev/null
+	curl -fsSI http://127.0.0.1:3000/dashboard >/dev/null
+	curl -fsSI http://127.0.0.1:3000/dashboard/preflight >/dev/null
+	curl -fsSI http://127.0.0.1:3000/dashboard/orders/print >/dev/null
+	@printf '%s\n' 'Care Call AI demo smoke passed on frontend 3000 and backend 8000.'
 
 demo-auth-smoke:
 	@cookie_file="$${TMPDIR:-/tmp}/carecall-auth-smoke.cookies"; \
-	curl -fsSI http://127.0.0.1:3001/login >/dev/null; \
-	curl -sSI http://127.0.0.1:3001/api/carecall/api/dashboard | grep -q '307 Temporary Redirect'; \
+	curl -fsSI http://127.0.0.1:3000/login >/dev/null; \
+	curl -sSI http://127.0.0.1:3000/api/carecall/api/dashboard | grep -q '307 Temporary Redirect'; \
 	curl -fsS -c "$$cookie_file" \
 		-d "username=$${CARECALL_OPERATOR_USERNAME:-carecall-coordinator}&password=$${CARECALL_OPERATOR_PASSWORD:-carecall-demo-password}&next=/dashboard" \
-		http://127.0.0.1:3001/api/auth/login >/dev/null; \
-	curl -fsS -b "$$cookie_file" http://127.0.0.1:3001/api/carecall/api/dashboard >/dev/null; \
+		http://127.0.0.1:3000/api/auth/login >/dev/null; \
+	curl -fsS -b "$$cookie_file" http://127.0.0.1:3000/api/carecall/api/dashboard >/dev/null; \
 	printf '%s\n' 'Care Call AI auth smoke passed: login cookie and frontend API proxy are working.'
