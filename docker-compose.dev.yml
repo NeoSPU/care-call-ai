@@ -28,6 +28,6 @@ services:
       CARECALL_OPERATOR_PASSWORD: "${CARECALL_OPERATOR_PASSWORD:-carecall-demo-password}"
       CARECALL_BACKEND_API_TOKEN: "${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}"
     ports:
-      - "3001:3000"
+      - "3001:3001"
     depends_on:
       - backend
