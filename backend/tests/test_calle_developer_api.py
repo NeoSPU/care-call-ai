@@ -1,5 +1,6 @@
 import json
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 from app.calle_developer_api import DeveloperApiRunner, DeveloperApiSettings
@@ -37,7 +38,7 @@ class DeveloperApiRunnerTests(unittest.TestCase):
 
         runner = DeveloperApiRunner(
             DeveloperApiSettings(
-                api_key="calle_live_key_test",
+                api_key="test-key",
                 base_url="https://api.heycall-e.com",
                 region="GB",
                 timeout_seconds=45,
@@ -68,7 +69,7 @@ class DeveloperApiRunnerTests(unittest.TestCase):
         self.assertEqual(run.returncode, 0)
         self.assertEqual(json.loads(run.stdout)["run_id"], "call-123")
         self.assertEqual(requests[0].full_url, "https://api.heycall-e.com/v1/calls")
-        self.assertEqual(requests[0].headers["Authorization"], "Bearer calle_live_key_test")
+        self.assertEqual(requests[0].headers["Authorization"], "Bearer test-key")
         self.assertEqual(requests[0].headers["Idempotency-key"], "carecall-key-1")
 
     def test_get_call_result_reads_call_status(self):
@@ -78,14 +79,14 @@ class DeveloperApiRunnerTests(unittest.TestCase):
             requests.append(request)
             return FakeResponse({"id": "call-123", "status": "completed", "structured_result": {"completed_count": 1}})
 
-        runner = DeveloperApiRunner(DeveloperApiSettings(api_key="calle_live_key_test"))
+        runner = DeveloperApiRunner(DeveloperApiSettings(api_key="test-key"))
         with patch("urllib.request.urlopen", fake_urlopen):
             result = runner(("calle", "get_call_run", "call-123"), {})
 
         self.assertEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)["status"], "completed")
         self.assertEqual(requests[0].full_url, "https://api.heycall-e.com/v1/calls/call-123")
-        self.assertEqual(requests[0].headers["Authorization"], "Bearer calle_live_key_test")
+        self.assertEqual(requests[0].headers["Authorization"], "Bearer test-key")
 
     def test_missing_api_key_blocks_runner(self):
         runner = DeveloperApiRunner(DeveloperApiSettings(api_key=""))
@@ -93,6 +94,26 @@ class DeveloperApiRunnerTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Developer API settings", result.stderr)
+
+    def test_http_error_body_is_preserved_for_backend_diagnostics(self):
+        def fake_urlopen(request, timeout):
+            raise urllib.error.HTTPError(
+                request.full_url,
+                400,
+                "Bad Request",
+                {},
+                __import__("io").BytesIO(b'{"error":"invalid recipient phone"}'),
+            )
+
+        runner = DeveloperApiRunner(DeveloperApiSettings(api_key="test-key"))
+        runner(("calle", "plan_call", json.dumps({"idempotency_key": "key-1", "to_phone": "+15550101234"})), {})
+
+        with patch("urllib.request.urlopen", fake_urlopen):
+            result = runner(("calle", "run_call", "key-1"), {})
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("HTTP Error 400", result.stderr)
+        self.assertIn("invalid recipient phone", result.stderr)
 
 
 if __name__ == "__main__":

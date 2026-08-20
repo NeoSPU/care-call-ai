@@ -120,6 +120,11 @@ Terminal 1 - start the backend API in Docker:
 make demo-up
 ```
 
+Docker stores the local SQLite app state in the `carecall_runtime` volume, so a
+normal `make demo-down && make demo-up` keeps recipient-card edits such as the
+approved test phone number. Remove that volume only when you intentionally want
+a fresh seed dataset.
+
 Terminal 2 - start the frontend locally:
 
 ```bash

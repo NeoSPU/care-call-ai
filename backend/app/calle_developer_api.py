@@ -87,6 +87,8 @@ class DeveloperApiRunner:
             if command[0:2] == ("calle", "get_call_run"):
                 payload = self._get_call(command[2] if len(command) > 2 else "")
                 return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+        except urllib.error.HTTPError as exc:
+            return subprocess.CompletedProcess(command, 1, "", _http_error_message(exc))
         except (ValueError, urllib.error.URLError, TimeoutError) as exc:
             return subprocess.CompletedProcess(command, 1, "", str(exc))
 
@@ -144,6 +146,16 @@ class DeveloperApiRunner:
         if isinstance(parsed, dict):
             return parsed
         return {"value": parsed}
+
+
+def _http_error_message(exc: urllib.error.HTTPError) -> str:
+    try:
+        body = exc.read().decode("utf-8", errors="replace").strip()
+    except Exception:
+        body = ""
+    if body:
+        return f"HTTP Error {exc.code}: {exc.reason}; {body}"
+    return f"HTTP Error {exc.code}: {exc.reason}"
 
 
 def _locale_for(language: str, region: str) -> str:
