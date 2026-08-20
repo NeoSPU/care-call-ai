@@ -38,7 +38,7 @@ class McpHttpSettings:
 
 def mcp_http_enabled(env: dict[str, str] | None = None) -> bool:
     env = os.environ if env is None else env
-    return env.get(CALLE_PROVIDER_ENV, "").strip().lower() in {"mcp_http", "http", "api"}
+    return env.get(CALLE_PROVIDER_ENV, "").strip().lower() in {"mcp_http", "mcp-http"}
 
 
 def settings_from_env(env: dict[str, str] | None = None) -> McpHttpSettings:

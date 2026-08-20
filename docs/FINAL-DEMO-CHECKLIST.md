@@ -18,21 +18,9 @@ Practice runs must stop at dry run.
 
 ## 2. CALL-E Readiness
 
-Run only safe readiness checks first:
-
-```bash
-env CALLE_SOURCE=skills_sh CALLE_INTEGRATION=skills_sh_skill CALLE_INTEGRATION_VERSION=0.1.0 calle --help
-env CALLE_SOURCE=skills_sh CALLE_INTEGRATION=skills_sh_skill CALLE_INTEGRATION_VERSION=0.1.0 calle auth status
-env CALLE_SOURCE=skills_sh CALLE_INTEGRATION=skills_sh_skill CALLE_INTEGRATION_VERSION=0.1.0 calle mcp tools
-```
-
-The tool list must include:
-
-- `plan_call`
-- `run_call`
-- `get_call_run`
-
-Stop if CALL-E auth, tools, or participant readiness are not confirmed.
+Confirm that the CALL-E dashboard API key is present only in backend `.env` or
+backend deployment secrets. Stop if CALL-E credentials or participant readiness
+are not confirmed.
 
 ## 3. App Readiness
 
@@ -69,9 +57,9 @@ recipient card, not stored in `.env`.
 
 ```text
 CARECALL_MAX_LIVE_BATCH_SIZE=1
-CARECALL_CALLE_PROVIDER=mcp_http
-CARECALL_CALLE_MCP_SERVER_URL=https://seleven-mcp-sg.airudder.com/mcp/openagent_oauth
-CARECALL_CALLE_AUTH_TOKEN=...
+CARECALL_CALLE_PROVIDER=api
+CARECALL_CALLE_API_KEY=...
+CARECALL_CALLE_API_BASE_URL=https://api.heycall-e.com
 CARECALL_CALLE_REGION=GB
 ```
 
@@ -83,7 +71,7 @@ Live execution is allowed only when all of these are true:
 
 - [ ] `CARECALL_MAX_LIVE_BATCH_SIZE=1` is set or the default value is in use.
 - [ ] The selected recipient card contains the approved real E.164 phone number.
-- [ ] `CARECALL_CALLE_AUTH_TOKEN` is set only for the backend process.
+- [ ] `CARECALL_CALLE_API_KEY` is set only for the backend process.
 - [ ] The selected ready key set still matches the backend preflight key set.
 - [ ] The operator has checked all four live confirmation boxes:
   - active consent;

@@ -14,6 +14,7 @@ from typing import Callable
 
 from .approval import OperatorApproval, validate_operator_approval
 from .call_planning import CallPlanPreview
+from .calle_developer_api import developer_api_enabled, developer_api_runner_from_env
 from .calle_mcp_http import mcp_http_enabled, mcp_http_runner_from_env
 from .calle_readiness import CalleReadiness, SAFE_CALLE_ENV, default_runner
 from .domain import StrEnum
@@ -78,6 +79,8 @@ def fetch_call_result(run_id: str, runner: ExecutionRunner | None = None) -> dic
 
 
 def default_execution_runner() -> ExecutionRunner:
+    if developer_api_enabled():
+        return developer_api_runner_from_env()
     if mcp_http_enabled():
         return mcp_http_runner_from_env()
     return default_runner

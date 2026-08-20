@@ -94,7 +94,7 @@ cp .env.example .env
 ```
 
 For a safe dry-run demo, the defaults are enough. For a real approved CALL-E
-demo, fill these values in `.env` before starting the stack:
+demo, fill the app secrets in `.env` before starting the stack:
 
 ```text
 CARECALL_BACKEND_API_TOKEN=...
@@ -102,14 +102,15 @@ CARECALL_OPERATOR_USERNAME=carecall-coordinator
 CARECALL_OPERATOR_PASSWORD=...
 CARECALL_AUTH_SECRET=...
 CARECALL_MAX_LIVE_BATCH_SIZE=1
-CARECALL_CALLE_PROVIDER=mcp_http
-CARECALL_CALLE_MCP_SERVER_URL=https://seleven-mcp-sg.airudder.com/mcp/openagent_oauth
-CARECALL_CALLE_AUTH_TOKEN=...
+CARECALL_CALLE_PROVIDER=api
+CARECALL_CALLE_API_KEY=...
+CARECALL_CALLE_API_BASE_URL=https://api.heycall-e.com
 CARECALL_CALLE_REGION=GB
 ```
 
-`CARECALL_CALLE_AUTH_TOKEN` is a backend-only CALL-E credential. Do not expose
-it to browser code and do not commit `.env`.
+`CARECALL_CALLE_API_KEY` is the official CALL-E dashboard API key. Keep it only
+in backend `.env` or hosted backend secrets. Do not expose CALL-E credentials to
+browser code and do not commit `.env`.
 
 ## Local Run
 
@@ -151,7 +152,7 @@ Prerequisites:
 
 - Docker Desktop is running.
 - Node.js and npm are installed.
-- You have a CALL-E account and a backend CALL-E MCP auth token.
+- You have a CALL-E account and local CALL-E CLI authorization.
 - You have consent or an approved outreach basis for the test phone number.
 
 ### 1. Clone
@@ -183,12 +184,15 @@ CARECALL_OPERATOR_PASSWORD=<operator login password>
 CARECALL_AUTH_SECRET=<long random frontend session signing secret>
 CARECALL_API_BASE_URL=http://127.0.0.1:8000
 CARECALL_MAX_LIVE_BATCH_SIZE=1
-CARECALL_CALLE_PROVIDER=mcp_http
-CARECALL_CALLE_MCP_SERVER_URL=https://seleven-mcp-sg.airudder.com/mcp/openagent_oauth
-CARECALL_CALLE_AUTH_TOKEN=<backend-only CALL-E MCP auth token>
+CARECALL_CALLE_PROVIDER=api
+CARECALL_CALLE_API_KEY=<CALL-E dashboard API key>
+CARECALL_CALLE_API_BASE_URL=https://api.heycall-e.com
 CARECALL_CALLE_REGION=GB
 CARECALL_CALLE_TIMEOUT_SECONDS=45
 ```
+
+Use the API key from the CALL-E dashboard. The public demo does not require
+CALL-E CLI authorization or local token-cache copying.
 
 You can generate non-CALL-E local secrets and copy them into `.env`:
 

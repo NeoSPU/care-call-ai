@@ -29,7 +29,7 @@ SECRET_PATTERNS = (
     (
         "Secret assignment",
         re.compile(
-            r"\b(?:TOKEN|SECRET|API_KEY|AUTH_TOKEN|ACCESS_TOKEN)\b\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{16,}",
+            r"\b(?:TOKEN|SECRET|API_KEY|AUTH_TOKEN|ACCESS_TOKEN)\b\s*[:=]\s*['\"][A-Za-z0-9._~+/=-]{16,}['\"]",
             re.IGNORECASE,
         ),
     ),

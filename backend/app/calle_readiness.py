@@ -11,6 +11,7 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Callable
 
+from .calle_developer_api import developer_api_enabled, settings_from_env as api_settings_from_env
 from .calle_mcp_http import mcp_http_enabled, mcp_http_runner_from_env, settings_from_env
 
 
@@ -60,6 +61,8 @@ def default_runner(command: tuple[str, ...], env: dict[str, str]) -> subprocess.
 
 
 def check_calle_readiness(runner: CommandRunner = default_runner) -> CalleReadiness:
+    if runner is default_runner and developer_api_enabled():
+        return check_developer_api_readiness()
     if runner is default_runner and mcp_http_enabled():
         return check_configured_provider_readiness()
 
@@ -78,6 +81,29 @@ def check_calle_readiness(runner: CommandRunner = default_runner) -> CalleReadin
         tools_available=tools_check.success and not missing_tools,
         missing_tools=missing_tools,
         checks=checks,
+    )
+
+
+def check_developer_api_readiness(env: dict[str, str] | None = None) -> CalleReadiness:
+    settings = api_settings_from_env(env)
+    missing = []
+    if not settings.base_url:
+        missing.append("CARECALL_CALLE_API_BASE_URL")
+    if not settings.api_key:
+        missing.append("CARECALL_CALLE_API_KEY")
+    check = CommandCheck(
+        name="developer_api_config",
+        command=("carecall", "calle", "developer_api_config"),
+        success=not missing,
+        output="CALL-E Developer API configuration is present." if not missing else "",
+        error=", ".join(missing),
+    )
+    return CalleReadiness(
+        cli_available=True,
+        authenticated=not missing,
+        tools_available=not missing,
+        missing_tools=tuple(missing),
+        checks=(check,),
     )
 
 

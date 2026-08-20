@@ -759,6 +759,10 @@ def _provider_status(payload: dict[str, Any]) -> str:
 
 def _normalized_provider_result(payload: dict[str, Any], provider_status: str) -> dict[str, Any]:
     normalized = dict(payload)
+    structured = _provider_structured_result(payload)
+    if structured:
+        normalized.setdefault("summary", structured.get("summary", ""))
+        normalized.setdefault("needs", structured.get("needs", []))
     if provider_status in NO_CONTACT_PROVIDER_STATUSES:
         normalized["status"] = "no_contact"
         normalized.setdefault("summary", f"CALL-E ended with {provider_status}; route for human review.")
@@ -773,6 +777,21 @@ def _normalized_provider_result(payload: dict[str, Any], provider_status: str) -
         normalized["status"] = "completed"
         normalized.setdefault("needs", [])
     return normalized
+
+
+def _provider_structured_result(payload: dict[str, Any]) -> dict[str, Any]:
+    recipients = payload.get("recipients")
+    if isinstance(recipients, list):
+        for recipient in recipients:
+            if not isinstance(recipient, dict):
+                continue
+            structured = recipient.get("structured_result")
+            if isinstance(structured, dict):
+                return structured
+    structured = payload.get("structured_result")
+    if isinstance(structured, dict):
+        return structured
+    return {}
 
 
 if __name__ == "__main__":

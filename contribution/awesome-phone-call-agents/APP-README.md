@@ -86,11 +86,14 @@ in your hosting provider's secret manager. For live demos, the backend needs:
 ```text
 CARECALL_BACKEND_API_TOKEN=...
 CARECALL_MAX_LIVE_BATCH_SIZE=1
-CARECALL_CALLE_PROVIDER=mcp_http
-CARECALL_CALLE_MCP_SERVER_URL=https://seleven-mcp-sg.airudder.com/mcp/openagent_oauth
-CARECALL_CALLE_AUTH_TOKEN=...
+CARECALL_CALLE_PROVIDER=api
+CARECALL_CALLE_API_KEY=...
+CARECALL_CALLE_API_BASE_URL=https://api.heycall-e.com
 CARECALL_CALLE_REGION=GB
 ```
+
+`CARECALL_CALLE_API_KEY` is the official CALL-E dashboard API key. Keep it in
+backend `.env` or hosted backend secrets only.
 
 Do not run real outbound calls from ad hoc terminal commands. In this app, live
 calls must go through the guarded UI path after preflight and explicit operator
