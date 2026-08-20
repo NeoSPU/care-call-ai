@@ -47,6 +47,8 @@ Care Call AI reserves host ports `3000` and `8000`.
 ```bash
 cp .env.example .env
 make demo-up
+npm --prefix frontend install
+python3 scripts/run_frontend_from_env.py
 ```
 
 Open:

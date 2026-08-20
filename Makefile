@@ -3,7 +3,7 @@ include .env
 export
 endif
 
-.PHONY: help secrets-check final-readiness backend-test frontend-test frontend-build test docker-config demo-up demo-down demo-smoke demo-auth-smoke
+.PHONY: help secrets-check final-readiness backend-test frontend-test frontend-build frontend-deps test docker-config demo-up demo-down demo-smoke demo-auth-smoke
 
 help:
 	@printf '%s\n' 'Care Call AI public demo commands:'
@@ -14,7 +14,8 @@ help:
 	@printf '%s\n' '  make frontend-test       Run frontend Vitest suite'
 	@printf '%s\n' '  make frontend-build      Build the Next.js frontend'
 	@printf '%s\n' '  make docker-config       Validate demo Docker compose config'
-	@printf '%s\n' '  make demo-up             Start demo stack on frontend 3000 and backend 8000'
+	@printf '%s\n' '  make demo-up             Start backend API in Docker on port 8000'
+	@printf '%s\n' '  python3 scripts/run_frontend_from_env.py  Start frontend locally on port 3000'
 	@printf '%s\n' '  make demo-smoke          Check demo URLs after make demo-up'
 	@printf '%s\n' '  make demo-auth-smoke     Check local login and protected frontend API proxy'
 	@printf '%s\n' '  make demo-down           Stop the demo stack'
@@ -34,13 +35,19 @@ frontend-test:
 frontend-build:
 	npm --prefix frontend run build
 
+frontend-deps:
+	@if [ ! -d frontend/node_modules ]; then \
+		printf '%s\n' 'Installing frontend dependencies...'; \
+		npm --prefix frontend ci --no-audit --no-fund; \
+	fi
+
 test: secrets-check final-readiness backend-test frontend-test frontend-build
 
 docker-config:
 	docker compose -f docker-compose.dev.yml config
 
 demo-up:
-	docker compose -f docker-compose.dev.yml up --build
+	docker compose -f docker-compose.dev.yml up -d --build backend
 
 demo-down:
 	docker compose -f docker-compose.dev.yml down

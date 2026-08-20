@@ -114,8 +114,17 @@ it to browser code and do not commit `.env`.
 
 ## Local Run
 
+Terminal 1 - start the backend API in Docker:
+
 ```bash
 make demo-up
+```
+
+Terminal 2 - start the frontend locally:
+
+```bash
+npm --prefix frontend install
+python3 scripts/run_frontend_from_env.py
 ```
 
 Open:
@@ -131,7 +140,7 @@ operator: carecall-coordinator
 password: carecall-demo-password
 ```
 
-Use port `3000` for the frontend and `8000` for the backend.
+Use port `3000` for the local frontend and `8000` for the Docker backend.
 
 ## Clean-Room Live-Call Verification
 
@@ -146,12 +155,11 @@ Prerequisites:
 - You have a CALL-E account and a backend CALL-E MCP auth token.
 - You have consent or an approved outreach basis for the test phone number.
 
-### 1. Clone And Install
+### 1. Clone
 
 ```bash
 git clone https://github.com/NeoSPU/care-call-ai.git
 cd care-call-ai
-npm --prefix frontend install
 ```
 
 ### 2. Create `.env`
@@ -205,7 +213,7 @@ The second command should print `.env`.
 Use one terminal for the backend:
 
 ```bash
-docker compose -f docker-compose.dev.yml up --build backend
+make demo-up
 ```
 
 In a second terminal, verify the backend. This reads the bearer token from
@@ -241,6 +249,7 @@ Use another terminal for the frontend:
 
 ```bash
 cd care-call-ai
+npm --prefix frontend install
 python3 scripts/run_frontend_from_env.py
 ```
 
@@ -284,7 +293,7 @@ the terminal. Use the app:
 ### 6. Stop The Local Verification Stack
 
 ```bash
-docker compose -f docker-compose.dev.yml down
+make demo-down
 ```
 
 Stop the local frontend terminal with `Ctrl-C`.

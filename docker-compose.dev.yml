@@ -15,19 +15,3 @@ services:
       CARECALL_CALLE_TIMEOUT_SECONDS: "${CARECALL_CALLE_TIMEOUT_SECONDS:-45}"
     ports:
       - "8000:8000"
-
-  frontend:
-    build:
-      context: frontend
-      dockerfile: Dockerfile
-    environment:
-      NEXT_TELEMETRY_DISABLED: "1"
-      CARECALL_API_BASE_URL: "http://backend:8000"
-      CARECALL_AUTH_SECRET: "${CARECALL_AUTH_SECRET:-carecall-local-dev-secret}"
-      CARECALL_OPERATOR_USERNAME: "${CARECALL_OPERATOR_USERNAME:-carecall-coordinator}"
-      CARECALL_OPERATOR_PASSWORD: "${CARECALL_OPERATOR_PASSWORD:-carecall-demo-password}"
-      CARECALL_BACKEND_API_TOKEN: "${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}"
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
