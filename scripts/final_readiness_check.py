@@ -12,26 +12,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 REQUIRED_FILES = (
-    "docs/FINAL-DEMO-CHECKLIST.md",
-    "docs/DEMO-SCRIPT.md",
-    "docs/FINAL-DEMO-READINESS.md",
-    "docs/HACKATHON-PROJECT-FORM-DRAFT.md",
-    "docs/PUBLIC-README.md",
-    "docs/REAL-CALL-SAFETY.md",
-    "CALL-E-installation-guide.md",
+    "README.md",
+    ".env.example",
+    "Makefile",
+    ".github/workflows/ci.yml",
     "backend/app/server.py",
     "backend/app/calle_execution.py",
+    "frontend/src/app/page.tsx",
+    "frontend/src/app/privacy/page.tsx",
+    "frontend/src/app/terms/page.tsx",
+    "frontend/src/app/support/page.tsx",
+    "frontend/src/app/api/support/route.ts",
     "frontend/src/app/dashboard/page.tsx",
     "frontend/src/app/dashboard/operator/page.tsx",
+    "frontend/src/app/dashboard/preflight/page.tsx",
     "frontend/src/app/dashboard/orders/print/page.tsx",
     "frontend/src/app/dashboard/urgent-callback/page.tsx",
     "contribution/awesome-phone-call-agents/APP-README.md",
+    "contribution/awesome-phone-call-agents/PR-DESCRIPTION.md",
+    "contribution/awesome-phone-call-agents/README-entry.md",
+    "contribution/awesome-phone-call-agents/SAFETY-CHECKLIST.md",
 )
 
 REQUIRED_FORM_WARNINGS = (
-    "<add sanitized public repository URL>",
-    "<add PR URL after opening the pull request>",
-    "<YouTube or Vimeo demo video URL>",
+    "<add https://care.alexraixon.com after deployment verification>",
+    "<add YouTube or Vimeo URL>",
+    "<add CALLE-AI/awesome-phone-call-agents PR URL>",
 )
 
 
@@ -60,7 +66,7 @@ def safety_env_checks(env: dict[str, str]) -> list[ReadinessResult]:
 
 
 def submission_warning_checks(root: Path) -> list[ReadinessResult]:
-    form = read_text(root, "docs/HACKATHON-PROJECT-FORM-DRAFT.md")
+    form = read_text(root, "README.md")
     return [
         ReadinessResult("warn" if marker in form else "ok", f"submission placeholder still present: {marker}")
         for marker in REQUIRED_FORM_WARNINGS

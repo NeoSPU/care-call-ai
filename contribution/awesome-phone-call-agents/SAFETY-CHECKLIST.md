@@ -13,9 +13,9 @@ Use this before opening a PR to `CALLE-AI/awesome-phone-call-agents`.
 - [ ] README states which commands are safe readiness checks.
 - [ ] README states which commands can place real calls.
 - [ ] README documents setup, side effects, cancellation/stop conditions,
-      credential handling, and dry-run/preview behaviour.
+      credential handling, and preflight/preview behaviour.
 - [ ] Tests use fake runners and do not run `calle run_call`.
-- [ ] Dry-run/preflight route reports zero real calls.
+- [ ] Preflight review reports zero real calls until frontend approval is complete.
 - [ ] Real-call demo participants have consent or approved outreach basis.
 - [ ] Critical, blocked, and special-handling recipients are not auto-called.
 - [ ] Urgent Callback is described as support callback handling, not an

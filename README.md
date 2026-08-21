@@ -1,8 +1,10 @@
 # Care Call AI
 
+[![CI](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml)
+
 Care Call AI is a condition-aware CALL-E app for charities and care support teams.
 
-It helps coordinators safely prepare outreach rounds, run no-call preflight, place a small approved CALL-E batch, and turn phone conversations into practical service requests and printable delivery orders.
+It helps coordinators safely prepare outreach rounds, review the planned call list, place a small approved CALL-E batch, and turn phone conversations into practical service requests and printable delivery orders.
 
 ## Product Promise
 
@@ -31,7 +33,7 @@ flowchart LR
     Frontend --> Proxy["Protected server-side API proxy"]
     Proxy --> Backend["Python backend API"]
     Backend --> Store["Fictional demo data / local app state"]
-    Backend --> Preflight["Dry-run preflight and approval gates"]
+    Backend --> Preflight["Operator preflight and approval gates"]
     Preflight --> Calle["CALL-E runtime"]
     Calle --> Recipient["Consented recipient or trusted answerer"]
     Calle --> Results["Call result, summary, transcript evidence"]
@@ -42,7 +44,7 @@ flowchart LR
 ```mermaid
 flowchart TD
     Seen["Care seen: readiness and safety dashboard"] --> Heard["Needs heard: operator reviews the call round"]
-    Heard --> Gate["No-call preflight and exact approval"]
+    Heard --> Gate["Planned-call review and exact approval"]
     Gate --> Call["Guarded CALL-E call path"]
     Call --> Delivered["Help delivered: service requests and printable orders"]
     Heard --> Urgent["Urgent Callback queue"]
@@ -59,15 +61,19 @@ Care Call AI uses CALL-E inside a safer workflow:
 - recipient safety categories;
 - condition-aware call goals;
 - trusted answerers;
-- no-call preflight;
+- planned-call preflight;
 - exact approval before live calls;
 - structured service request generation.
 
 ## Screens
 
+- `/` - branded public entry page with login, support, and legal links.
+- `/privacy` - public privacy policy.
+- `/terms` - public terms and conditions.
+- `/support` - public support form with server-side validation and anti-abuse controls.
 - `/dashboard` - Care seen statistics.
 - `/dashboard/operator` - Needs heard auto-call round preparation.
-- `/dashboard/preflight` - no-call preflight and approval gate.
+- `/dashboard/preflight` - planned calls and approval gate.
 - `/dashboard/urgent-callback` - priority callback queue.
 - `/dashboard/recipients` - recipient cards.
 - `/dashboard/orders/print` - Help delivered summary and printable orders.
@@ -77,7 +83,7 @@ Care Call AI uses CALL-E inside a safer workflow:
 The project is safe by default:
 
 - tests use fake CALL-E runners;
-- dry-run/preflight places zero calls;
+- preflight review places zero calls until the operator completes the frontend approval gate;
 - live calls require CALL-E readiness, one-recipient batch size, the current
   approval keyset, four UI confirmations, and the exact authorization phrase;
 - maximum live batch size is `1`;
@@ -93,8 +99,8 @@ Docker Compose reads `.env` automatically. Create it once:
 cp .env.example .env
 ```
 
-For a safe dry-run demo, the defaults are enough. For a real approved CALL-E
-demo, fill the app secrets in `.env` before starting the stack:
+For a local UI-only demo, the defaults are enough. For a real approved CALL-E
+demo, fill the backend and CALL-E secrets in `.env` before starting the stack:
 
 ```text
 CARECALL_BACKEND_API_TOKEN=...
@@ -111,6 +117,19 @@ CARECALL_CALLE_REGION=GB
 `CARECALL_CALLE_API_KEY` is the official CALL-E dashboard API key. Keep it only
 in backend `.env` or hosted backend secrets. Do not expose CALL-E credentials to
 browser code and do not commit `.env`.
+
+The support form is optional for local demo use. To forward support messages to
+an email/webhook provider, configure these server-side values in `.env` or your
+hosting platform secrets:
+
+```text
+CARECALL_SUPPORT_EMAIL_ENDPOINT=...
+CARECALL_SUPPORT_EMAIL_TOKEN=...
+```
+
+If no support endpoint is configured, the form still validates and accepts the
+message locally without sending email. Never expose support-mail credentials to
+browser code.
 
 ## Local Run
 
@@ -157,7 +176,7 @@ Prerequisites:
 
 - Docker Desktop is running.
 - Node.js and npm are installed.
-- You have a CALL-E account and local CALL-E CLI authorization.
+- You have a CALL-E account and a dashboard API key.
 - You have consent or an approved outreach basis for the test phone number.
 
 ### 1. Clone
@@ -285,19 +304,19 @@ the terminal. Use the app:
 6. Select exactly one eligible recipient.
 7. Click the button that opens/runs preflight.
 8. On `/dashboard/preflight`, confirm the list contains exactly one ready call.
-9. Run dry run first. It must report `0` real calls placed.
-10. Switch to live mode.
-11. Check all four live confirmations.
-12. Type exactly:
+9. Click `Start calls`.
+10. In the Approval Gate modal, check all four live confirmations.
+11. Type exactly:
 
    ```text
    EXECUTE LIVE CALLS
    ```
 
-13. Start the live round from the frontend button.
-14. Wait for the CALL-E call to finish.
-15. Click `Import latest CALL-E result`.
-16. Open `/dashboard/orders/print` to verify whether service requests/orders
+12. Click `Start calls now` from the frontend modal.
+13. Keep the call progress modal open while CALL-E processes the call.
+14. When the result is ready, the app imports it and shows the generated order
+    count.
+15. Open `/dashboard/orders/print` to verify whether service requests/orders
     were created from the imported result.
 
 ### 6. Stop The Local Verification Stack
@@ -315,11 +334,15 @@ Real calls are started only from the app:
 1. Open `/dashboard/operator`.
 2. Select exactly one approved, non-critical recipient.
 3. Run preflight.
-4. On `/dashboard/preflight`, switch to live mode.
-5. Check all four confirmations.
-6. Type the exact phrase `EXECUTE LIVE CALLS`.
-7. Click the live start button.
-8. After the call reaches a terminal CALL-E status, click `Import latest CALL-E result`.
+4. On `/dashboard/preflight`, review `Planned calls` and remove any recipient
+   that should not be called.
+5. Click `Start calls`.
+6. In the Approval Gate modal, check all four confirmations.
+7. Type the exact phrase `EXECUTE LIVE CALLS`.
+8. Click `Start calls now`.
+9. Use the progress modal to follow submitted, completed, waiting, and imported
+   result status.
+10. When service requests/orders are created, open `/dashboard/orders/print`.
 
 Do not run real outbound calls from ad hoc terminal commands. The terminal is
 only for one-time `.env` setup and starting the app.
@@ -344,21 +367,9 @@ make final-readiness
 
 ## Final Real Call Safety
 
-Before any real call, complete:
-
-```text
-docs/FINAL-DEMO-CHECKLIST.md
-```
-
-Stop if consent, answerer identity, route, keyset, or participant comfort is uncertain.
+Before any real call, confirm consent, answerer identity, route, selected recipient, participant comfort, and the exact frontend approval gate. Stop if any of those checks are uncertain.
 
 ## Hackathon Submission
-
-Project form draft:
-
-```text
-docs/HACKATHON-PROJECT-FORM-DRAFT.md
-```
 
 CALL-E contribution material:
 

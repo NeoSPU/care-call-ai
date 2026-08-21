@@ -9,5 +9,5 @@ Suggested row for the `apps/` table:
 Suggested short list entry if maintainers prefer the simple README template:
 
 ```markdown
-- [Care Call AI](apps/web/care-call-ai/) - Condition-aware care outreach app for safe CALL-E rounds with dry-run preflight, critical-recipient handling, urgent callback queue, and service-request/order handoff.
+- [Care Call AI](apps/web/care-call-ai/) - Condition-aware care outreach app for safe CALL-E rounds with operator preflight, critical-recipient handling, urgent callback queue, and service-request/order handoff.
 ```

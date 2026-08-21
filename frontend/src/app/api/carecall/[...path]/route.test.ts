@@ -5,6 +5,7 @@ import { GET } from "./route";
 
 describe("CareCall backend proxy route", () => {
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
 
@@ -13,6 +14,7 @@ describe("CareCall backend proxy route", () => {
       headers: { "Content-Type": "application/json" },
       status: 200,
     }));
+    vi.stubEnv("CARECALL_BACKEND_API_TOKEN", "carecall-local-backend-token");
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await GET(new NextRequest("http://localhost/api/carecall/api/dashboard"), {

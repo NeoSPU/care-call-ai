@@ -7,11 +7,8 @@ import {
   createBatch,
   getDashboardData,
   getPreflight,
-  getRunResults,
-  getRunStatus,
   importRunResult,
   requestLiveExecution,
-  runDryRunBatch,
 } from "../../../lib/carecall-api";
 
 vi.mock("../../../lib/carecall-api", () => ({
@@ -19,11 +16,8 @@ vi.mock("../../../lib/carecall-api", () => ({
   createBatch: vi.fn(),
   getDashboardData: vi.fn(),
   getPreflight: vi.fn(),
-  getRunResults: vi.fn(),
-  getRunStatus: vi.fn(),
   importRunResult: vi.fn(),
   requestLiveExecution: vi.fn(),
-  runDryRunBatch: vi.fn(),
 }));
 
 const readyPreview = {
@@ -136,13 +130,6 @@ function mockPreflightLoad() {
       stale: false,
     },
   });
-  vi.mocked(runDryRunBatch).mockResolvedValue({
-    accepted: true,
-    mode: "dry_run",
-    real_calls_placed: 0,
-    blocked_reasons: [],
-    records: [],
-  });
   vi.mocked(requestLiveExecution).mockResolvedValue({
     accepted: false,
     mode: "live",
@@ -192,42 +179,6 @@ function mockPreflightLoad() {
       },
     ],
   });
-  vi.mocked(getRunStatus).mockResolvedValue({
-    run: {
-      id: "run-api-001",
-      plan_id: "plan-api-001",
-      approval_id: "approval-api-001",
-      recipient_id: "rec-api-001",
-      idempotency_key: "backend-key-001",
-      status: "dry_run",
-      mode: "dry_run",
-      provider_plan_id: "",
-      provider_run_id: "",
-      started_at: "",
-      completed_at: "",
-      error: "",
-      masked_phone: "+1******4401",
-    },
-  });
-  vi.mocked(getRunResults).mockResolvedValue({
-    run: {
-      id: "run-api-001",
-      plan_id: "plan-api-001",
-      approval_id: "approval-api-001",
-      recipient_id: "rec-api-001",
-      idempotency_key: "backend-key-001",
-      status: "dry_run",
-      mode: "dry_run",
-      provider_plan_id: "",
-      provider_run_id: "",
-      started_at: "",
-      completed_at: "",
-      error: "",
-      masked_phone: "+1******4401",
-    },
-    intake_result: { id: "intake-api-001", summary: "Dry run only.", needs: [] },
-    service_requests: [],
-  });
 }
 
 async function renderPreflight() {
@@ -236,12 +187,12 @@ async function renderPreflight() {
 }
 
 function completeLiveGate() {
-  fireEvent.click(screen.getByRole("button", { name: "Live auto-round" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start calls" }));
   [
     "I verified consent is active for every selected recipient.",
     "Routes and care profiles match every selected recipient.",
-    "Approved keys exactly match the backend ready key set.",
-    "I understand live CALL-E places real outbound calls and may spend credits.",
+    "I reviewed the planned call list shown on this screen.",
+    "I understand Care Call AI will place real outbound calls.",
   ].forEach((label) => {
     const input = screen.getByLabelText(label) as HTMLInputElement;
     if (!input.checked) {
@@ -264,22 +215,24 @@ describe("PreflightPage", () => {
 
     expect(getDashboardData).toHaveBeenCalled();
     expect(getPreflight).toHaveBeenCalledWith("batch-api-001");
-    expect(screen.getByRole("link", { name: "Back to Daily round" }).getAttribute("href")).toBe("/dashboard");
+    expect(screen.getByRole("link", { name: "Back to Operator panel" }).getAttribute("href")).toBe("/dashboard/operator");
     expect(screen.queryByText("APPROVE CARE CALL AI AUTO ROUND")).toBeNull();
-    expect(screen.getByRole("heading", { name: "Round preflight / dry run" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Round preflight" })).toBeTruthy();
     expect(screen.getByText("May answer: Marija Chen (spouse)")).toBeTruthy();
+    expect(screen.queryByText("Backend ready key set")).toBeNull();
+    expect(screen.queryByText("Run batch dry run (no dials)")).toBeNull();
+    expect(screen.queryByText("Live auto-round")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start calls" }));
     const readiness = screen.getByLabelText("Final demo readiness");
     expect(within(readiness).getByText("Selected recipient")).toBeTruthy();
     expect(within(readiness).getByText("Exactly one")).toBeTruthy();
     expect(within(readiness).getByText("Answerer rule")).toBeTruthy();
     expect(within(readiness).getByText("Visible")).toBeTruthy();
-    expect(within(readiness).getByText("Backend keyset")).toBeTruthy();
-    expect(within(readiness).getByText("Issued")).toBeTruthy();
-    expect(within(readiness).getByText("Live start gate")).toBeTruthy();
+    expect(within(readiness).getByText("Planned calls")).toBeTruthy();
+    expect(within(readiness).getByText("Ready")).toBeTruthy();
+    expect(within(readiness).getByText("Start gate")).toBeTruthy();
     expect(within(readiness).getByText("Locked")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Dry run" }).getAttribute("aria-pressed")).toBe(
-      "true",
-    );
   });
 
   it("uses URL batch_id when dashboard creates a selected batch", async () => {
@@ -357,48 +310,39 @@ describe("PreflightPage", () => {
     expect(screen.getByText("Jamie Ready")).toBeTruthy();
   });
 
-  it("runs dry run with no dials and shows the zero real-call result", async () => {
+  it("does not expose dry-run controls to the operator", async () => {
     await renderPreflight();
 
-    fireEvent.click(screen.getByRole("button", { name: "Run batch dry run (no dials)" }));
-
-    expect(runDryRunBatch).toHaveBeenCalledWith({
-      plan_id: "plan-api-001",
-      approval_id: "dry-run",
-      approved_keys: ["backend-key-001"],
-    });
-    expect(await screen.findByText(/Dry run complete: 0 real calls placed/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Run batch dry run (no dials)" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Dry run" })).toBeNull();
+    expect(screen.queryByText(/Dry run never dials/)).toBeNull();
   });
 
-  it("keeps live execution disabled until confirmations, exact phrase, and exact keyset are ready", async () => {
+  it("keeps live execution disabled until confirmations and exact phrase are ready", async () => {
     await renderPreflight();
 
-    fireEvent.click(screen.getByRole("button", { name: "Live auto-round" }));
-    expect(screen.getByRole("button", { name: "Start live CALL-E round" }).hasAttribute("disabled")).toBe(
-      true,
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Start calls" }));
+    expect(screen.getByRole("button", { name: "Start calls now" }).hasAttribute("disabled")).toBe(true);
 
     fireEvent.change(screen.getByLabelText("Authorization phrase"), {
       target: { value: "EXECUTE LIVE CALL" },
     });
-    expect(screen.getByRole("button", { name: "Start live CALL-E round" }).hasAttribute("disabled")).toBe(
-      true,
-    );
+    expect(screen.getByRole("button", { name: "Start calls now" }).hasAttribute("disabled")).toBe(true);
 
+    cleanup();
+    await renderPreflight();
     completeLiveGate();
     expect(approvePreflight).not.toHaveBeenCalled();
-    expect(
-      (await screen.findByRole("button", { name: "Start live CALL-E round" })).hasAttribute("disabled"),
-    ).toBe(false);
-    expect(within(screen.getByLabelText("Final demo readiness")).getByText("Ready")).toBeTruthy();
+    expect((await screen.findByRole("button", { name: "Start calls now" })).hasAttribute("disabled")).toBe(false);
+    expect(within(screen.getByLabelText("Final demo readiness")).getAllByText("Ready").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "Start live CALL-E round" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start calls now" }));
 
     expect(approvePreflight).toHaveBeenCalledWith({
       plan_id: "plan-api-001",
       approved_keys: ["backend-key-001"],
       operator: "carecall-coordinator",
-      note: "Approved from preflight start action.",
+      note: "Approved from Start calls action.",
       confirmations: {
         active_consent: true,
         care_route_match: true,
@@ -436,7 +380,7 @@ describe("PreflightPage", () => {
     render(await PreflightPage());
 
     completeLiveGate();
-    fireEvent.click(screen.getByRole("button", { name: "Start live CALL-E round" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start calls now" }));
 
     expect((await screen.findAllByText("The service could not complete this action. Please contact support if the problem continues.")).length).toBeGreaterThan(0);
     expect(screen.queryByText("Approved key set does not match the current backend preflight plan.")).toBeNull();
@@ -462,7 +406,7 @@ describe("PreflightPage", () => {
     render(await PreflightPage());
 
     completeLiveGate();
-    fireEvent.click(await screen.findByRole("button", { name: "Start live CALL-E round" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start calls now" }));
 
     expect((await screen.findAllByText("The service could not complete this action. Please contact support if the problem continues.")).length).toBeGreaterThan(0);
     expect(screen.queryByText("CALL-E readiness check failed.")).toBeNull();
@@ -495,18 +439,16 @@ describe("PreflightPage", () => {
     });
 
     completeLiveGate();
-    fireEvent.click(await screen.findByRole("button", { name: "Start live CALL-E round" }));
-
-    expect(await screen.findByText(/Live execution accepted: 1 real calls placed/)).toBeTruthy();
-    expect(screen.getByText("Run run-api-live-001")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Import latest CALL-E result" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start calls now" }));
 
     await waitFor(() => {
       expect(importRunResult).toHaveBeenCalledWith("run-api-live-001");
     });
-    expect(await screen.findByText("CALL-E result imported: 1 service request created.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Open print orders" }).getAttribute("href")).toBe(
+    expect(screen.getByText("Run run-api-live-001")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getAllByText("CALL-E result imported: 1 service request created.").length).toBeGreaterThan(0);
+    });
+    expect(screen.getAllByRole("link", { name: "Open orders" })[0].getAttribute("href")).toBe(
       "/dashboard/orders/print",
     );
   });
@@ -523,8 +465,8 @@ describe("PreflightPage", () => {
     expect(screen.getByText("Sam Manual")).toBeTruthy();
     expect(screen.getByText("Severe or unsuitable cases route to caregiver/staff/manual handling.")).toBeTruthy();
 
-    const manualRows = screen.getAllByRole("row").filter((row) => within(row).queryByText("not issued"));
-    expect(manualRows.length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("not issued")).toBeNull();
+    expect(screen.queryByText("backend-key-001")).toBeNull();
     expect(screen.getAllByLabelText("Locked out of automated calling").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("rec-api-002:backend-key")).toBeNull();
   });

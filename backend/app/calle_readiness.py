@@ -1,7 +1,7 @@
-"""Safe CALL-E CLI readiness checks.
+"""Safe CALL-E readiness checks.
 
-This module never places outbound calls. It only runs setup/readiness commands
-listed in CALL-E-installation-guide.md.
+This module never places outbound calls. It only checks that the configured
+CALL-E provider can authenticate and expose the expected call tools.
 """
 
 from __future__ import annotations

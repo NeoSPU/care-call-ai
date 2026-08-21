@@ -14,10 +14,7 @@ class FinalReadinessCheckTests(unittest.TestCase):
             path = root / relative_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("placeholder\n", encoding="utf-8")
-        (root / "docs/HACKATHON-PROJECT-FORM-DRAFT.md").write_text(
-            "\n".join(final_readiness_check.REQUIRED_FORM_WARNINGS),
-            encoding="utf-8",
-        )
+        (root / "README.md").write_text("\n".join(final_readiness_check.REQUIRED_FORM_WARNINGS), encoding="utf-8")
         return root
 
     def test_readiness_passes_with_submission_warnings_for_manual_links(self):
@@ -39,14 +36,14 @@ class FinalReadinessCheckTests(unittest.TestCase):
 
     def test_readiness_fails_when_required_file_is_missing(self):
         root = self.make_root()
-        (root / "docs/FINAL-DEMO-CHECKLIST.md").unlink()
+        (root / ".github/workflows/ci.yml").unlink()
 
         results = final_readiness_check.run_checks(
             root,
             {"CARECALL_MAX_LIVE_BATCH_SIZE": "1"},
         )
 
-        self.assertTrue(any(result.message == "docs/FINAL-DEMO-CHECKLIST.md exists" for result in results if result.level == "fail"))
+        self.assertTrue(any(result.message == ".github/workflows/ci.yml exists" for result in results if result.level == "fail"))
 
     def test_readiness_does_not_require_private_planning_or_deployment_docs(self):
         results = final_readiness_check.run_checks(

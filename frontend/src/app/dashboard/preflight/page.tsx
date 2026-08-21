@@ -23,7 +23,7 @@ function ErrorPreflight() {
       </aside>
       <div className="content">
         <section className="section">
-          <h1>Round preflight / dry run</h1>
+          <h1>Round preflight</h1>
           <p>{SERVICE_DATA_ERROR}</p>
         </section>
       </div>

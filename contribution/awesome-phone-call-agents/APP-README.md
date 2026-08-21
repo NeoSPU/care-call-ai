@@ -3,7 +3,7 @@
 Care Call AI is a condition-aware CALL-E user-facing app for charities and care
 support teams.
 
-It helps coordinators safely prepare outreach rounds, run no-call preflight,
+It helps coordinators safely prepare outreach rounds, review planned calls,
 place a small approved CALL-E batch, and turn phone conversations into practical
 service requests and printable delivery orders.
 
@@ -99,12 +99,12 @@ Do not run real outbound calls from ad hoc terminal commands. In this app, live
 calls must go through the guarded UI path after preflight and explicit operator
 approval.
 
-## Dry Run And Preview Behaviour
+## Preflight And Preview Behaviour
 
 The default app path is safe:
 
 - `/dashboard/preflight` previews planned calls without placing calls;
-- dry-run reports `real_calls_placed: 0`;
+- operator-facing preflight does not expose backend keys or technical test controls;
 - planned calls use masked phones in operator-facing UI;
 - each planned call has a stable idempotency key;
 - critical, blocked, and operator-only recipients are visible but excluded from
@@ -124,8 +124,8 @@ Care Call AI can place real outbound calls only when all live-call gates pass:
 
 For the final approved real-call demo, start the backend with `make demo-up`,
 edit the approved participant's phone number in the frontend recipient card,
-then complete live mode, four confirmations, and the exact authorization phrase
-in the frontend.
+then complete `Start calls`, four confirmations, and the exact authorization
+phrase in the frontend.
 
 ## Cancellation And Stop Conditions
 
@@ -164,12 +164,8 @@ be committed.
    pressure.
 3. Open **Needs heard** at `/dashboard/operator`.
 4. Review and adjust the current auto-call round.
-5. Run `/dashboard/preflight` and verify the exact dry-run list.
+5. Run `/dashboard/preflight` and verify the exact planned-call list.
 6. For final recording only, run one approved CALL-E call.
 7. Open **Help delivered** at `/dashboard/orders/print`.
 8. Show generated service requests and printable delivery orders.
 9. Open **Urgent Callback** to show the separate priority queue.
-
-Full script: `docs/DEMO-SCRIPT.md`.
-Safety notes: `docs/REAL-CALL-SAFETY.md`.
-Final live checklist: `docs/FINAL-DEMO-CHECKLIST.md`.

@@ -3,7 +3,7 @@
 ## Summary
 
 Adds Care Call AI, a condition-aware care outreach app for safe CALL-E rounds.
-Care Call AI helps coordinators prepare approved call batches, run no-call
+Care Call AI helps coordinators prepare approved call batches, review planned
 preflight, place a small guarded CALL-E batch, and turn conversations into
 practical service requests and printable delivery orders.
 
@@ -27,7 +27,7 @@ domain-specific support workflow:
 - Alzheimer's/dementia handling adapts by severity;
 - critical, blocked, and special-handling records are visible but not placed
   into unattended automation;
-- no-call preflight shows masked phones, routes, blocked reasons, and
+- planned-call preflight shows masked phones, routes, blocked reasons, and
   idempotency keys;
 - urgent callback requests are handled in a separate priority queue;
 - generated outputs are coordinator-ready service requests and printable orders
@@ -47,7 +47,7 @@ domain-specific support workflow:
 
 ## Safety
 
-- Tests and dry-run paths place zero real calls.
+- Tests and preflight review paths place zero real calls.
 - Real calls require CALL-E readiness, live-call env gates, valid
   consent/outreach basis, reviewed preflight, exact approval of the pending
   idempotency-key set, and an authorization phrase.

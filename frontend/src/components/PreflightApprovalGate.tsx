@@ -1,32 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   approvePreflight,
   createBatch,
   getPreflight,
-  getRunResults,
-  getRunStatus,
   importRunResult,
   requestLiveExecution,
-  runDryRunBatch,
 } from "../lib/carecall-api";
 import { storeRoundSelection } from "../lib/round-selection";
 import { logTechnicalError } from "../lib/technical-log";
-import type { ApprovalDto, PlannedCallDto, PreflightPayload } from "../lib/types";
+import type { PlannedCallDto, PreflightPayload } from "../lib/types";
 import { SERVICE_SUPPORT_ERROR } from "../lib/user-messages";
 
 const CONFIRMATION_LABELS = {
   active_consent: "I verified consent is active for every selected recipient.",
   care_route_match: "Routes and care profiles match every selected recipient.",
-  exact_keyset: "Approved keys exactly match the backend ready key set.",
-  real_side_effects:
-    "I understand live CALL-E places real outbound calls and may spend credits.",
+  exact_keyset: "I reviewed the planned call list shown on this screen.",
+  real_side_effects: "I understand Care Call AI will place real outbound calls.",
 } as const;
 
 type ConfirmationKey = keyof typeof CONFIRMATION_LABELS;
-type Mode = "dry_run" | "live";
+type ProgressStatus = "idle" | "submitting" | "waiting" | "imported" | "failed";
 
 type PreflightApprovalGateProps = {
   operatorName?: string;
@@ -34,6 +30,7 @@ type PreflightApprovalGateProps = {
 };
 
 const AUTHORIZATION_PHRASE = "EXECUTE LIVE CALLS";
+const POLL_INTERVAL_MS = 8000;
 
 const emptyConfirmations: Record<ConfirmationKey, boolean> = {
   active_consent: false,
@@ -85,14 +82,16 @@ function readinessClass(ready: boolean) {
 
 export function PreflightApprovalGate({ operatorName = "carecall-coordinator", preflight }: PreflightApprovalGateProps) {
   const [currentPreflight, setCurrentPreflight] = useState(preflight);
-  const [mode, setMode] = useState<Mode>("dry_run");
   const [confirmations, setConfirmations] =
     useState<Record<ConfirmationKey, boolean>>(emptyConfirmations);
   const [phrase, setPhrase] = useState("");
-  const [approval, setApproval] = useState<ApprovalDto | null>(null);
+  const [approvalOpen, setApprovalOpen] = useState(false);
+  const [progressOpen, setProgressOpen] = useState(false);
   const [approvalErrors, setApprovalErrors] = useState<string[]>([]);
   const [result, setResult] = useState<string>("");
   const [liveRunId, setLiveRunId] = useState("");
+  const [providerStatus, setProviderStatus] = useState("");
+  const [progressStatus, setProgressStatus] = useState<ProgressStatus>("idle");
   const [importedRequestCount, setImportedRequestCount] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectionError, setSelectionError] = useState("");
@@ -109,7 +108,6 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
   const oneReadyRecipient = readyKeys.length === 1;
   const answererRulesVisible = groups.ready.length > 0;
   const liveReady =
-    mode === "live" &&
     Boolean(planId) &&
     oneReadyRecipient &&
     allConfirmed &&
@@ -117,8 +115,17 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
     maxBatchCompliant &&
     approvalErrors.length === 0;
 
+  useEffect(() => {
+    if (!progressOpen || !liveRunId || importedRequestCount !== null || progressStatus === "failed") {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      void importLatestResult(liveRunId, true);
+    }, POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [importedRequestCount, liveRunId, progressOpen, progressStatus]);
+
   function setConfirmation(key: ConfirmationKey, value: boolean) {
-    setApproval(null);
     setApprovalErrors([]);
     setConfirmations((current) => ({ ...current, [key]: value }));
   }
@@ -134,11 +141,8 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
     }
 
     setBusy(true);
-    setResult("");
-    setLiveRunId("");
-    setImportedRequestCount(null);
+    resetRunState();
     setSelectionError("");
-    setApproval(null);
     setApprovalErrors([]);
     setConfirmations(emptyConfirmations);
     setPhrase("");
@@ -160,31 +164,12 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
     }
   }
 
-  async function runDryRun() {
-    if (!planId) {
-      return;
-    }
-    setBusy(true);
+  function resetRunState() {
     setResult("");
     setLiveRunId("");
+    setProviderStatus("");
+    setProgressStatus("idle");
     setImportedRequestCount(null);
-    try {
-      const response = await runDryRunBatch({
-        plan_id: planId,
-        approval_id: "dry-run",
-        approved_keys: readyKeys,
-      });
-      if (response.records[0]?.id) {
-        await getRunStatus(response.records[0].id);
-        await getRunResults(response.records[0].id);
-      }
-      setResult(`Dry run complete: ${response.real_calls_placed} real calls placed.`);
-    } catch (error) {
-      logTechnicalError("Dry run request failed.", error);
-      setResult(SERVICE_SUPPORT_ERROR);
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function runLive() {
@@ -192,15 +177,17 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
       return;
     }
     setBusy(true);
-    setResult("");
-    setApproval(null);
+    setProgressOpen(true);
+    setApprovalOpen(false);
+    setProgressStatus("submitting");
+    setResult("Submitting the approved call round to CALL-E.");
     setApprovalErrors([]);
     try {
       const approvalResponse = await approvePreflight({
         plan_id: planId,
         approved_keys: readyKeys,
         operator: operatorName,
-        note: "Approved from preflight start action.",
+        note: "Approved from Start calls action.",
         confirmations,
         authorization_phrase: phrase,
       });
@@ -208,9 +195,9 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
         logTechnicalError("Preflight approval rejected by backend.", approvalResponse.blocked_reasons);
         setApprovalErrors([SERVICE_SUPPORT_ERROR]);
         setResult(SERVICE_SUPPORT_ERROR);
+        setProgressStatus("failed");
         return;
       }
-      setApproval(approvalResponse.approval);
       const response = await requestLiveExecution({
         plan_id: planId,
         approval_id: approvalResponse.approval.id,
@@ -220,34 +207,45 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
       });
       if (!response.accepted) {
         logTechnicalError("Live execution rejected by backend.", response.blocked_reasons);
-        setApproval(null);
         setApprovalErrors([SERVICE_SUPPORT_ERROR]);
+        setResult(SERVICE_SUPPORT_ERROR);
+        setProgressStatus("failed");
+        return;
       }
       const runId = response.records[0]?.id ?? "";
       setLiveRunId(runId);
-      setResult(response.accepted ? liveAcceptedMessage(response.real_calls_placed, runId) : SERVICE_SUPPORT_ERROR);
+      setProgressStatus("waiting");
+      setResult(liveAcceptedMessage(response.real_calls_placed));
+      if (runId) {
+        void importLatestResult(runId, true);
+      }
     } catch (error) {
       logTechnicalError("Live execution request failed.", error);
-      setApproval(null);
       setApprovalErrors([SERVICE_SUPPORT_ERROR]);
+      setResult(SERVICE_SUPPORT_ERROR);
+      setProgressStatus("failed");
     } finally {
       setBusy(false);
     }
   }
 
-  async function importLatestResult() {
-    if (!liveRunId) {
+  async function importLatestResult(runId = liveRunId, automatic = false) {
+    if (!runId) {
       return;
     }
-    setBusy(true);
-    setImportedRequestCount(null);
+    if (!automatic) {
+      setBusy(true);
+    }
     try {
-      const response = await importRunResult(liveRunId);
+      const response = await importRunResult(runId);
+      setProviderStatus(response.provider_status);
       if (!response.imported) {
-        setResult(`CALL-E run is ${response.provider_status}. No order has been imported yet.`);
+        setProgressStatus("waiting");
+        setResult(`CALL-E status: ${response.provider_status}. Waiting for a completed result before creating orders.`);
         return;
       }
       setImportedRequestCount(response.service_requests.length);
+      setProgressStatus("imported");
       setResult(
         `CALL-E result imported: ${response.service_requests.length} service request${
           response.service_requests.length === 1 ? "" : "s"
@@ -255,42 +253,24 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
       );
     } catch (error) {
       logTechnicalError("CALL-E result import failed.", error);
-      setResult(SERVICE_SUPPORT_ERROR);
+      if (!automatic) {
+        setResult(SERVICE_SUPPORT_ERROR);
+        setProgressStatus("failed");
+      }
     } finally {
-      setBusy(false);
+      if (!automatic) {
+        setBusy(false);
+      }
     }
   }
 
   return (
     <>
-      <section className="warningBand sideEffectBand" role="alert">
-        <strong>Approving live CALL-E places real outbound calls to every selected eligible recipient in the batch.</strong>
-        <span>Dry run never dials. Blocked, DNC, and excluded rows cannot be selected.</span>
-      </section>
-
       <header className="topbar preflightTopbar">
         <div>
-          <a className="textAction" href="/dashboard">Back to Daily round</a>
-          <h1>Round preflight / dry run</h1>
-          <p>Validate routes, consent, idempotency keys, and backend gates before any side effect.</p>
-        </div>
-        <div className="modeToggle" role="group" aria-label="Execution mode">
-          <button
-            aria-pressed={mode === "dry_run"}
-            className={mode === "dry_run" ? "active" : ""}
-            onClick={() => setMode("dry_run")}
-            type="button"
-          >
-            Dry run
-          </button>
-          <button
-            aria-pressed={mode === "live"}
-            className={mode === "live" ? "active live" : "live"}
-            onClick={() => setMode("live")}
-            type="button"
-          >
-            Live auto-round
-          </button>
+          <a className="textAction" href="/dashboard/operator">Back to Operator panel</a>
+          <h1>Round preflight</h1>
+          <p>Review the planned calls, remove anyone who should not be called, then start the approved round.</p>
         </div>
       </header>
 
@@ -304,10 +284,9 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
               </p>
             </div>
           </div>
-          <div className="batchMeta">
+          <div className="batchMeta operatorBatchMeta">
             <span>Batch <strong>{currentPreflight.batch_id ?? "current"}</strong></span>
-            <span>Plan <strong>{planId || "pending"}</strong></span>
-            <span>Mode <strong>{mode === "dry_run" ? "DRY_RUN" : "LIVE_SIDE_EFFECT"}</strong></span>
+            <span>Date <strong>{currentPreflight.call_date ?? "today"}</strong></span>
           </div>
           <div className="tableScroll">
             <table className="table preflightTable">
@@ -318,7 +297,6 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
                   <th>Masked phone</th>
                   <th>Route</th>
                   <th>Status</th>
-                  <th>Idempotency key</th>
                 </tr>
               </thead>
               <tbody>
@@ -355,7 +333,6 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
                         <small className="blockReason" key={reason}>{reason}</small>
                       ))}
                     </td>
-                    <td className="mono">{preview.ready ? preview.idempotency_key : "not issued"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -364,96 +341,39 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
           {selectionError && <p className="errorText" role="alert">{selectionError}</p>}
         </section>
 
-        <aside className="approvalBox approvalGate">
-          <h2>Approval Gate</h2>
-          <p>Live execution requires four confirmations, exact backend keyset, and the exact phrase.</p>
+        <aside className="approvalBox roundActionRail" aria-label="Start calls">
+          <h2>Start calls</h2>
+          <p>Open the approval check, confirm the planned list, and launch the real CALL-E round.</p>
           <div className="gateStats">
             <div>
-              <span>Will dial</span>
+              <span>Will call</span>
               <strong>{readyKeys.length}</strong>
             </div>
             <div>
-              <span>Max live batch</span>
-              <strong>1</strong>
+              <span>Manual</span>
+              <strong>{groups.manual.length + groups.blocked.length}</strong>
             </div>
           </div>
-          <div className="demoReadiness" aria-label="Final demo readiness">
-            <div className={`readinessRow ${readinessClass(oneReadyRecipient)}`}>
-              <span>Selected recipient</span>
-              <strong>{oneReadyRecipient ? "Exactly one" : "Adjust to one"}</strong>
-            </div>
-            <div className={`readinessRow ${readinessClass(answererRulesVisible)}`}>
-              <span>Answerer rule</span>
-              <strong>{answererRulesVisible ? "Visible" : "Missing"}</strong>
-            </div>
-            <div className={`readinessRow ${readinessClass(Boolean(planId) && readyKeys.length > 0)}`}>
-              <span>Backend keyset</span>
-              <strong>{planId && readyKeys.length > 0 ? "Issued" : "Pending"}</strong>
-            </div>
-            <div className={`readinessRow ${readinessClass(liveReady)}`}>
-              <span>Live start gate</span>
-              <strong>{liveReady ? "Ready" : "Locked"}</strong>
-            </div>
-          </div>
-          <div className="keysetBox">
-            <span>Backend ready key set</span>
-            {readyKeys.map((key) => (
-              <code key={key}>{key}</code>
-            ))}
-          </div>
-          <div className="checklist">
-            {(Object.keys(CONFIRMATION_LABELS) as ConfirmationKey[]).map((key) => (
-              <label className={confirmations[key] ? "checkRow on" : "checkRow"} key={key}>
-                <input
-                  checked={confirmations[key]}
-                  onChange={(event) => setConfirmation(key, event.target.checked)}
-                  type="checkbox"
-                />
-                <span>{CONFIRMATION_LABELS[key]}</span>
-              </label>
-            ))}
-          </div>
-          <label className="phraseField">
-            <span>Authorization phrase</span>
-            <input
-              aria-label="Authorization phrase"
-              onChange={(event) => {
-                setApproval(null);
-                setApprovalErrors([]);
-                setPhrase(event.target.value);
-              }}
-              value={phrase}
-            />
-            <small>Type <code>{AUTHORIZATION_PHRASE}</code> exactly.</small>
-          </label>
           {!maxBatchCompliant && (
             <p className="errorText">Live mode is limited to one selected recipient for the MVP.</p>
           )}
-          {approvalErrors.map((error) => (
-            <p className="errorText" key={error}>{error}</p>
-          ))}
-          <div className="gateActions">
-            <button className="button secondary" disabled={busy || !planId} onClick={runDryRun} type="button">
-              Run batch dry run (no dials)
-            </button>
-            <button
-              className={liveReady ? "button dangerButton" : "button mutedButton"}
-              disabled={busy || !liveReady}
-              onClick={runLive}
-              type="button"
-            >
-              Start live CALL-E round
-            </button>
-          </div>
+          <button
+            className="button dangerButton startCallsButton"
+            disabled={busy || !planId || !oneReadyRecipient || !maxBatchCompliant}
+            onClick={() => setApprovalOpen(true)}
+            type="button"
+          >
+            Start calls
+          </button>
           {liveRunId && (
             <div className="postCallActions">
               <span className="mono">Run {liveRunId}</span>
-              <button className="button secondary" disabled={busy} onClick={importLatestResult} type="button">
-                Import latest CALL-E result
+              <button className="button secondary" disabled={busy} onClick={() => void importLatestResult()} type="button">
+                Check CALL-E result
               </button>
               {importedRequestCount !== null && (
                 <a className="textAction" href="/dashboard/orders/print">
-                  Open print orders
+                  Open orders
                 </a>
               )}
             </div>
@@ -461,11 +381,149 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
           {result && <p className="resultBox" role="status">{result}</p>}
         </aside>
       </div>
+
+      {approvalOpen && (
+        <div className="modalScrim" role="presentation">
+          <section aria-modal="true" className="approvalModal approvalBox" role="dialog" aria-labelledby="approval-title">
+            <div className="modalHeader">
+              <div>
+                <h2 id="approval-title">Approval Gate</h2>
+                <p>Confirm the planned call round before Care Call AI starts real outbound calls.</p>
+              </div>
+              <button className="iconButton" onClick={() => setApprovalOpen(false)} type="button" aria-label="Close approval gate">
+                ×
+              </button>
+            </div>
+            <div className="demoReadiness" aria-label="Final demo readiness">
+              <div className={`readinessRow ${readinessClass(oneReadyRecipient)}`}>
+                <span>Selected recipient</span>
+                <strong>{oneReadyRecipient ? "Exactly one" : "Adjust to one"}</strong>
+              </div>
+              <div className={`readinessRow ${readinessClass(answererRulesVisible)}`}>
+                <span>Answerer rule</span>
+                <strong>{answererRulesVisible ? "Visible" : "Missing"}</strong>
+              </div>
+              <div className={`readinessRow ${readinessClass(Boolean(planId) && readyKeys.length > 0)}`}>
+                <span>Planned calls</span>
+                <strong>{planId && readyKeys.length > 0 ? "Ready" : "Pending"}</strong>
+              </div>
+              <div className={`readinessRow ${readinessClass(liveReady)}`}>
+                <span>Start gate</span>
+                <strong>{liveReady ? "Ready" : "Locked"}</strong>
+              </div>
+            </div>
+            <div className="checklist">
+              {(Object.keys(CONFIRMATION_LABELS) as ConfirmationKey[]).map((key) => (
+                <label className={confirmations[key] ? "checkRow on" : "checkRow"} key={key}>
+                  <input
+                    checked={confirmations[key]}
+                    onChange={(event) => setConfirmation(key, event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>{CONFIRMATION_LABELS[key]}</span>
+                </label>
+              ))}
+            </div>
+            <label className="phraseField">
+              <span>Authorization phrase</span>
+              <input
+                aria-label="Authorization phrase"
+                onChange={(event) => {
+                  setApprovalErrors([]);
+                  setPhrase(event.target.value);
+                }}
+                value={phrase}
+              />
+              <small>Type <code>{AUTHORIZATION_PHRASE}</code> exactly.</small>
+            </label>
+            {approvalErrors.map((error) => (
+              <p className="errorText" key={error}>{error}</p>
+            ))}
+            <div className="gateActions horizontalActions">
+              <button className="button secondary" onClick={() => setApprovalOpen(false)} type="button">
+                Cancel
+              </button>
+              <button
+                className={liveReady ? "button dangerButton" : "button mutedButton"}
+                disabled={busy || !liveReady}
+                onClick={runLive}
+                type="button"
+              >
+                Start calls now
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {progressOpen && (
+        <div className="modalScrim" role="presentation">
+          <section aria-modal="true" className="progressModal approvalBox" role="dialog" aria-labelledby="progress-title">
+            <div className="modalHeader">
+              <div>
+                <h2 id="progress-title">Call round progress</h2>
+                <p>Care Call AI is tracking the CALL-E result and will create orders when the result is ready.</p>
+              </div>
+              <button className="iconButton" onClick={() => setProgressOpen(false)} type="button" aria-label="Close call progress">
+                ×
+              </button>
+            </div>
+            <div className="progressGrid" aria-label="Call progress summary">
+              <div>
+                <span>Planned</span>
+                <strong>{readyKeys.length}</strong>
+              </div>
+              <div>
+                <span>Submitted</span>
+                <strong>{liveRunId ? 1 : progressStatus === "submitting" ? 0 : 0}</strong>
+              </div>
+              <div>
+                <span>Completed</span>
+                <strong>{progressStatus === "imported" ? 1 : 0}</strong>
+              </div>
+              <div>
+                <span>Orders</span>
+                <strong>{importedRequestCount ?? 0}</strong>
+              </div>
+            </div>
+            <div className={`progressStatus ${progressStatus}`} role="status">
+              <strong>{progressTitle(progressStatus)}</strong>
+              <span>{result || "Preparing the call round."}</span>
+              {providerStatus && <small>Provider status: {providerStatus}</small>}
+            </div>
+            <div className="gateActions horizontalActions">
+              <button className="button secondary" disabled={busy || !liveRunId} onClick={() => void importLatestResult()} type="button">
+                Check now
+              </button>
+              {importedRequestCount !== null && (
+                <a className="button" href="/dashboard/orders/print">
+                  Open orders
+                </a>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }
 
-function liveAcceptedMessage(realCallsPlaced: number, runId: string) {
-  const suffix = runId ? " Import the latest CALL-E result after the call reaches a terminal status." : "";
-  return `Live execution accepted: ${realCallsPlaced} real calls placed.${suffix}`;
+function liveAcceptedMessage(realCallsPlaced: number) {
+  return `Live execution accepted: ${realCallsPlaced} real call${realCallsPlaced === 1 ? "" : "s"} placed. Waiting for CALL-E to finish the result.`;
+}
+
+function progressTitle(status: ProgressStatus) {
+  if (status === "submitting") {
+    return "Submitting call";
+  }
+  if (status === "waiting") {
+    return "Waiting for CALL-E result";
+  }
+  if (status === "imported") {
+    return "Needs heard";
+  }
+  if (status === "failed") {
+    return "Action needed";
+  }
+  return "Ready";
 }

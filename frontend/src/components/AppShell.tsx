@@ -215,13 +215,13 @@ export function AppShell({
         <div className="waterMark" aria-hidden="true">
           <img alt="" src="/carecall-logo.svg" />
         </div>
-        <div className="roundHud" aria-label="Round call status">
-          <a aria-label="Open operator panel" className="hudButton" href="/dashboard/operator">
+        <div className={active === "preflight" ? "roundHud hiddenOnPreflight" : "roundHud"} aria-label="Start calls">
+          <a aria-label="Start calls" className="hudButton" href="/dashboard/preflight">
             <svg className="iconPlay" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M8 5v14l11-7z" />
             </svg>
           </a>
-          <div className="roundHudState">IDLE</div>
+          <div className="roundHudState">Start calls</div>
         </div>
         <div className="sidebarFoot">
           <div className="userChip">
