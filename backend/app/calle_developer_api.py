@@ -182,9 +182,8 @@ def _task_result_schema() -> dict[str, Any]:
 def _recipient_result_schema() -> dict[str, Any]:
     return {
         "type": "object",
-        "required": ["summary", "needs"],
+        "required": ["needs"],
         "properties": {
-            "summary": {"type": "string"},
             "needs": {
                 "type": "array",
                 "items": {

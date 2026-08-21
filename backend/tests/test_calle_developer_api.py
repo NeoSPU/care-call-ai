@@ -34,6 +34,7 @@ class DeveloperApiRunnerTests(unittest.TestCase):
             self.assertEqual(body["recipients"][0]["region"], "GB")
             self.assertEqual(body["recipients"][0]["locale"], "en-GB")
             self.assertEqual(body["metadata"]["recipient_id"], "rec-demo-max")
+            self.assertNotIn("summary", body["recipient_result_schema"]["properties"])
             return FakeResponse({"id": "call-123", "status": "queued"})
 
         runner = DeveloperApiRunner(
