@@ -16,6 +16,7 @@ class RoutingTest(unittest.TestCase):
         )
         self.assertEqual(request.queue, "delivery_volunteers")
         self.assertEqual(request.priority, "normal")
+        self.assertEqual(request.status, "ready_to_print")
 
     def test_today_medication_is_urgent(self):
         request = route_need(

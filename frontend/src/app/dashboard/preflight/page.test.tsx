@@ -28,6 +28,10 @@ const readyPreview = {
   route: "recipient",
   idempotency_key: "backend-key-001",
   blocked_reasons: [],
+  same_day_call_count: 0,
+  operator_repeat_available: false,
+  operator_repeat_limit_reached: false,
+  same_day_repeat_warning: "",
   authorized_contacts: [
     {
       name: "Marija Chen",
@@ -48,6 +52,10 @@ const unapprovedSpecialHandlingPreview = {
   blocked_reasons: [
     "Special-handling recipient requires explicit card review and per-recipient approval.",
   ],
+  same_day_call_count: 0,
+  operator_repeat_available: false,
+  operator_repeat_limit_reached: false,
+  same_day_repeat_warning: "",
 };
 
 const secondReadyPreview = {
@@ -58,6 +66,10 @@ const secondReadyPreview = {
   route: "recipient",
   idempotency_key: "backend-key-004",
   blocked_reasons: [],
+  same_day_call_count: 0,
+  operator_repeat_available: false,
+  operator_repeat_limit_reached: false,
+  same_day_repeat_warning: "",
 };
 
 const severeManualPreview = {
@@ -68,6 +80,10 @@ const severeManualPreview = {
   route: "staff",
   idempotency_key: "",
   blocked_reasons: ["Severe or unsuitable cases route to caregiver/staff/manual handling."],
+  same_day_call_count: 0,
+  operator_repeat_available: false,
+  operator_repeat_limit_reached: false,
+  same_day_repeat_warning: "",
 };
 
 const dashboardDto = {
@@ -206,6 +222,7 @@ function completeLiveGate() {
 
 describe("PreflightPage", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
     window.localStorage.clear();
   });
@@ -453,6 +470,112 @@ describe("PreflightPage", () => {
     );
   });
 
+  it("continues checking and importing a live result after the progress modal is closed", async () => {
+    await renderPreflight();
+    vi.mocked(requestLiveExecution).mockResolvedValue({
+      accepted: true,
+      mode: "live",
+      real_calls_placed: 1,
+      blocked_reasons: [],
+      records: [
+        {
+          id: "run-api-live-closed-001",
+          plan_id: "plan-api-001",
+          approval_id: "approval-api-001",
+          recipient_id: "rec-api-001",
+          idempotency_key: "backend-key-001",
+          status: "running",
+          mode: "live",
+          provider_plan_id: "provider-plan-001",
+          provider_run_id: "provider-run-001",
+          started_at: "",
+          completed_at: "",
+          error: "",
+          masked_phone: "+1******4401",
+        },
+      ],
+    });
+    vi.mocked(importRunResult)
+      .mockResolvedValueOnce({
+        imported: false,
+        provider_status: "in_progress",
+        run: {
+          id: "run-api-live-closed-001",
+          plan_id: "plan-api-001",
+          approval_id: "approval-api-001",
+          recipient_id: "rec-api-001",
+          idempotency_key: "backend-key-001",
+          status: "running",
+          mode: "live",
+          provider_plan_id: "provider-plan-001",
+          provider_run_id: "provider-run-001",
+          started_at: "",
+          completed_at: "",
+          error: "",
+          masked_phone: "+1******4401",
+        },
+      })
+      .mockResolvedValueOnce({
+        imported: true,
+        provider_status: "completed",
+        run: {
+          id: "run-api-live-closed-001",
+          plan_id: "plan-api-001",
+          approval_id: "approval-api-001",
+          recipient_id: "rec-api-001",
+          idempotency_key: "backend-key-001",
+          status: "completed",
+          mode: "live",
+          provider_plan_id: "provider-plan-001",
+          provider_run_id: "provider-run-001",
+          started_at: "",
+          completed_at: "",
+          error: "",
+          masked_phone: "+1******4401",
+        },
+        intake_result: {
+          id: "intake-run-api-live-closed-001",
+          recipient_id: "rec-api-001",
+          status: "completed",
+          summary: "Avery asked for milk.",
+          human_review: false,
+          needs: [],
+        },
+        service_requests: [
+          {
+            id: "svc-run-api-live-closed-001-1",
+            recipient_id: "rec-api-001",
+            recipient_name: "Avery Backend",
+            category: "groceries",
+            queue: "groceries",
+            sla_hours: 24,
+            priority: "normal",
+            status: "ready_to_print",
+            items: ["milk"],
+            notes: "Deliver tomorrow.",
+            human_review_reason: "",
+          },
+        ],
+      });
+
+    completeLiveGate();
+    fireEvent.click(await screen.findByRole("button", { name: "Start calls now" }));
+
+    expect(await screen.findByText(/You can safely close this window and keep working/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close call progress" }));
+    expect(screen.queryByRole("dialog", { name: "Call round progress" })).toBeNull();
+
+    await waitFor(() => {
+      expect(importRunResult).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(importRunResult).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByText("CALL-E result imported: 1 service request created.")).toBeTruthy();
+    expect(window.localStorage.getItem("carecall.activeLiveCallSession")).toBeNull();
+  });
+
   it("excludes unapproved special handling and locks severe manual rows without ready keys", async () => {
     await renderPreflight();
 
@@ -469,5 +592,65 @@ describe("PreflightPage", () => {
     expect(screen.queryByText("backend-key-001")).toBeNull();
     expect(screen.getAllByLabelText("Locked out of automated calling").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("rec-api-002:backend-key")).toBeNull();
+  });
+
+  it("shows same-day repeat call warnings from backend preflight metadata", async () => {
+    vi.mocked(getDashboardData).mockResolvedValue(dashboardDto);
+    vi.mocked(getPreflight).mockResolvedValue({
+      ...preflightDto,
+      ready_previews: [
+        {
+          ...readyPreview,
+          same_day_call_count: 1,
+          operator_repeat_available: true,
+          same_day_repeat_warning:
+            "Avery Backend has already received one live call today. A second operator-initiated call requires explicit repeat-call awareness.",
+        },
+      ],
+    });
+
+    render(await PreflightPage());
+
+    expect(screen.getByText(/already received one live call today/)).toBeTruthy();
+  });
+
+  it("requires repeat acknowledgement before starting a same-day repeat call", async () => {
+    vi.mocked(getDashboardData).mockResolvedValue(dashboardDto);
+    vi.mocked(getPreflight).mockResolvedValue({
+      ...preflightDto,
+      ready_previews: [
+        {
+          ...readyPreview,
+          same_day_call_count: 1,
+          operator_repeat_available: true,
+          same_day_repeat_warning:
+            "Avery Backend has already received one live call today. A second operator-initiated call requires explicit repeat-call awareness.",
+        },
+      ],
+    });
+
+    render(await PreflightPage());
+
+    completeLiveGate();
+    expect(screen.getByRole("button", { name: "Start calls now" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(
+      screen.getByLabelText(
+        "I understand this is a same-day repeat call and the agent will ask whether to update the previous request or add changes.",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Start calls now" }).hasAttribute("disabled")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start calls now" }));
+
+    await waitFor(() => {
+      expect(approvePreflight).toHaveBeenCalledWith(
+        expect.objectContaining({
+          confirmations: expect.objectContaining({
+            same_day_repeat_acknowledged: true,
+          }),
+        }),
+      );
+    });
   });
 });

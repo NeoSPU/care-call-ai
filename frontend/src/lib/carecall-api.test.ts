@@ -45,7 +45,6 @@ describe("carecallApiBaseUrl", () => {
       value: undefined,
       writable: true,
     });
-    vi.stubEnv("CARECALL_BACKEND_API_TOKEN", "carecall-local-backend-token");
     vi.stubGlobal("fetch", fetchMock);
 
     await getDashboardData();

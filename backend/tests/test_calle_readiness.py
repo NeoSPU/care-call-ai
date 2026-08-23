@@ -3,12 +3,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-from app.calle_readiness import (
-    SAFE_CALLE_ENV,
-    check_calle_readiness,
-    check_configured_provider_readiness,
-    check_developer_api_readiness,
-)
+from app.calle_readiness import SAFE_CALLE_ENV, check_calle_readiness, check_configured_provider_readiness
 
 
 class FakeResponse:
@@ -97,44 +92,6 @@ class CalleReadinessTest(unittest.TestCase):
         readiness = check_configured_provider_readiness(env, runner)
         self.assertTrue(readiness.ready)
         self.assertNotIn("secret-token", readiness.checks[0].output)
-
-    def test_developer_api_readiness_uses_dashboard_api_key_configuration(self):
-        readiness = check_developer_api_readiness(
-            {
-                "CARECALL_CALLE_PROVIDER": "api",
-                "CARECALL_CALLE_API_KEY": "calle_live_key_test",
-                "CARECALL_CALLE_API_BASE_URL": "https://api.heycall-e.com",
-            }
-        )
-
-        self.assertTrue(readiness.ready)
-        self.assertEqual(readiness.checks[0].name, "developer_api_config")
-        self.assertNotIn("calle_live_key_test", readiness.checks[0].output)
-
-    def test_developer_api_readiness_requires_api_key(self):
-        readiness = check_developer_api_readiness(
-            {
-                "CARECALL_CALLE_PROVIDER": "api",
-                "CARECALL_CALLE_API_BASE_URL": "https://api.heycall-e.com",
-            }
-        )
-
-        self.assertFalse(readiness.ready)
-        self.assertEqual(readiness.missing_tools, ("CARECALL_CALLE_API_KEY",))
-
-    def test_default_readiness_switches_to_developer_api_when_configured(self):
-        env = {
-            **os.environ,
-            "CARECALL_CALLE_PROVIDER": "api",
-            "CARECALL_CALLE_API_KEY": "calle_live_key_test",
-            "CARECALL_CALLE_API_BASE_URL": "https://api.heycall-e.com",
-        }
-
-        with patch.dict(os.environ, env, clear=True):
-            readiness = check_calle_readiness()
-
-        self.assertTrue(readiness.ready)
-        self.assertEqual(readiness.checks[0].name, "developer_api_config")
 
     def test_default_readiness_switches_to_mcp_http_provider_when_configured(self):
         env = {

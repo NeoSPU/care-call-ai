@@ -87,6 +87,12 @@ def live_task_for_preview(preview: CallPlanPreview) -> str:
         "If the speaker is unclear, politely ask who is speaking.",
         "Only collect practical support needs from the recipient or an authorized answerer.",
     ]
+    if preview.same_day_call_count > 0:
+        instructions.append(
+            "This is a same-day follow-up call. Politely say the recipient was already contacted today, "
+            "then ask whether they want to update the previous request or add new groceries, medicines, "
+            "transport, companionship, cleaning, repairs, or other practical support needs."
+        )
     style = _compact_style(goal.communication_style)
     if style:
         instructions.append("Communication style: " + "; ".join(style) + ".")

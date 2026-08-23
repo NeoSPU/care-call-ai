@@ -25,6 +25,10 @@ class CallPlanPreview:
     prompt_preview: str
     blocked_reasons: tuple[str, ...] = ()
     authorized_contacts: tuple[AuthorizedContact, ...] = ()
+    same_day_call_count: int = 0
+    operator_repeat_available: bool = False
+    operator_repeat_limit_reached: bool = False
+    same_day_repeat_warning: str = ""
 
 
 def build_call_plan_preview(recipient: Recipient, call_date: str) -> CallPlanPreview:

@@ -2607,6 +2607,11 @@ small {
   margin-top: 4px;
 }
 
+.repeatWarning {
+  color: var(--review);
+  font-weight: 650;
+}
+
 .approvalGate,
 .roundActionRail {
   position: sticky;
@@ -2922,6 +2927,55 @@ small {
   font-size: 13px;
   font-weight: 700;
   justify-self: end;
+}
+
+.ordersTableSection {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 0 auto 24px;
+  max-width: 1120px;
+  overflow: auto;
+}
+
+.ordersTable {
+  min-width: 980px;
+}
+
+.ordersTable td {
+  vertical-align: top;
+}
+
+.ordersTable td > strong,
+.ordersTable td > span,
+.ordersTable td > small {
+  display: block;
+}
+
+.ordersTable small,
+.orderNeedsGroup small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.orderNeedsGroup {
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.orderNeedsGroup strong {
+  font-size: 13px;
+}
+
+.orderNeedsGroup span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.orderNeedsGroup ul {
+  margin: 0;
+  padding-left: 18px;
 }
 
 .orderSheet {

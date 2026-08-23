@@ -1,8 +1,10 @@
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 from app.api_models import dashboard_payload, print_orders_payload, recipient_detail_payload
+from app.calle_execution import CallRunRecord, CallRunStatus
 from app.domain import SafetyCategory
 from app.repository import Repository, connect, init_schema, seed_database
 from app.storage import load_seed_recipients
@@ -60,6 +62,29 @@ class RepositoryProductStateTests(unittest.TestCase):
         self.assertIn("Coordinator reviewed", audit.note)
         self.assertEqual(detail.card.safety_category, SafetyCategory.NON_CRITICAL)
         self.assertEqual(self.repo.count_stale_approvals_for_recipient("rec-002"), 1)
+
+    def test_same_day_live_call_history_marks_repeat_warning_on_preview(self):
+        self.repo.save_call_runs(
+            plan_id="plan-repeat-test",
+            approval_id="approval-repeat-test",
+            records=[
+                CallRunRecord(
+                    recipient_id="rec-001",
+                    idempotency_key="repeat-key-001",
+                    status=CallRunStatus.RUNNING,
+                    masked_phone="+1******1001",
+                )
+            ],
+            mode="live",
+        )
+
+        payload = dashboard_payload(self.repo.get_dashboard_state(date.today().isoformat()))
+        preview = next(item for item in payload["planned_calls"] if item["recipient_id"] == "rec-001")
+
+        self.assertEqual(preview["same_day_call_count"], 1)
+        self.assertTrue(preview["operator_repeat_available"])
+        self.assertFalse(preview["operator_repeat_limit_reached"])
+        self.assertIn("already received one live call today", preview["same_day_repeat_warning"])
 
 
 class ApiModelProductStateTests(unittest.TestCase):

@@ -212,6 +212,10 @@ class StoredServiceRequest:
     items: tuple[str, ...]
     notes: str = ""
     human_review_reason: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    update_count: int = 0
+    update_history: tuple[dict, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

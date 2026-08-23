@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from datetime import date
+from dataclasses import replace
 from pathlib import Path
 from typing import Iterable
 
@@ -148,7 +150,11 @@ CREATE TABLE IF NOT EXISTS service_requests (
     status TEXT NOT NULL,
     items TEXT NOT NULL,
     notes TEXT NOT NULL,
-    human_review_reason TEXT NOT NULL
+    human_review_reason TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_count INTEGER NOT NULL DEFAULT 0,
+    update_history TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS callback_requests (
@@ -189,6 +195,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "call_runs", "mode", "TEXT NOT NULL DEFAULT 'dry_run'")
     _ensure_column(conn, "call_runs", "provider_plan_id", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "call_runs", "masked_phone", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "service_requests", "created_at", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "service_requests", "updated_at", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "service_requests", "update_count", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "service_requests", "update_history", "TEXT NOT NULL DEFAULT '[]'")
     _ensure_column(conn, "callback_requests", "operator", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "callback_requests", "updated_at", "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")
     _ensure_column(conn, "callback_requests", "resolution_note", "TEXT NOT NULL DEFAULT ''")
@@ -559,9 +569,14 @@ class Repository:
         from .run_results import process_call_result
 
         bundle = process_call_result(record, payload)
+        run_status = (
+            CallRunStatus.FAILED
+            if str(payload.get("status", "")).strip().lower() == "malformed"
+            else CallRunStatus.COMPLETED
+        )
         self.conn.execute(
             "UPDATE call_runs SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (CallRunStatus.COMPLETED.value, run_id),
+            (run_status.value, run_id),
         )
         intake_id = f"intake-{run_id}"
         service_id_prefix = f"svc-{run_id}"
@@ -593,27 +608,7 @@ class Repository:
         service_ids: list[str] = []
         for index, request in enumerate(bundle.service_requests, start=1):
             service_id = f"{service_id_prefix}-{index}"
-            service_ids.append(service_id)
-            self.conn.execute(
-                """
-                INSERT INTO service_requests (
-                    id, recipient_id, category, queue, sla_hours, priority, status,
-                    items, notes, human_review_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    service_id,
-                    request.recipient_id,
-                    request.category.value,
-                    request.queue,
-                    request.sla_hours,
-                    request.priority,
-                    request.status,
-                    json.dumps(list(request.items)),
-                    request.notes,
-                    request.human_review_reason,
-                ),
-            )
+            service_ids.append(self._upsert_same_day_service_request(service_id, run_id, request))
         self.conn.commit()
         intake_result = next(
             result for result in self.list_intake_results(bundle.intake_result.recipient_id) if result.id == intake_id
@@ -626,21 +621,147 @@ class Repository:
             ),
         }
 
+    def _upsert_same_day_service_request(self, service_id: str, run_id: str, request) -> str:
+        existing = self._find_same_day_service_request(request.recipient_id, request.category.value)
+        if existing is None:
+            update_history = [
+                {
+                    "event": "created",
+                    "run_id": run_id,
+                    "source": "call_result_import",
+                }
+            ]
+            self.conn.execute(
+                """
+                INSERT INTO service_requests (
+                    id, recipient_id, category, queue, sla_hours, priority, status,
+                    items, notes, human_review_reason, created_at, updated_at, update_count, update_history
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
+                """,
+                (
+                    service_id,
+                    request.recipient_id,
+                    request.category.value,
+                    request.queue,
+                    request.sla_hours,
+                    request.priority,
+                    request.status,
+                    json.dumps(list(request.items)),
+                    request.notes,
+                    request.human_review_reason,
+                    0,
+                    json.dumps(update_history),
+                ),
+            )
+            return service_id
+
+        history = _json_list(existing["update_history"])
+        if any(entry.get("run_id") == run_id for entry in history if isinstance(entry, dict)):
+            return str(existing["id"])
+
+        merged_items = _merge_items(_json_tuple(existing["items"]), request.items)
+        merged_notes = _merge_notes(existing["notes"], request.notes)
+        merged_reason = _merge_notes(existing["human_review_reason"], request.human_review_reason)
+        history.append(
+            {
+                "event": "updated",
+                "run_id": run_id,
+                "source": "same_day_repeat_import",
+                "added_items": [item for item in request.items if item not in _json_tuple(existing["items"])],
+            }
+        )
+        self.conn.execute(
+            """
+            UPDATE service_requests
+            SET queue = ?,
+                sla_hours = ?,
+                priority = ?,
+                status = ?,
+                items = ?,
+                notes = ?,
+                human_review_reason = ?,
+                updated_at = CURRENT_TIMESTAMP,
+                update_count = update_count + 1,
+                update_history = ?
+            WHERE id = ?
+            """,
+            (
+                request.queue,
+                min(int(existing["sla_hours"]), request.sla_hours),
+                _merge_priority(str(existing["priority"]), request.priority),
+                _merge_status(str(existing["status"]), request.status),
+                json.dumps(list(merged_items)),
+                merged_notes,
+                merged_reason,
+                json.dumps(history),
+                existing["id"],
+            ),
+        )
+        return str(existing["id"])
+
+    def _find_same_day_service_request(self, recipient_id: str, category: str):
+        today = date.today().isoformat()
+        return self.conn.execute(
+            """
+            SELECT *
+            FROM service_requests
+            WHERE recipient_id = ?
+              AND category = ?
+              AND id LIKE 'svc-run-%'
+              AND created_at LIKE ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (recipient_id, category, f"{today}%"),
+        ).fetchone()
+
     def list_recipients(self) -> tuple[Recipient, ...]:
         rows = self.conn.execute("SELECT * FROM recipients ORDER BY id").fetchall()
         return tuple(_recipient_from_row(row) for row in rows)
 
     def get_dashboard_state(self, call_date: str = "2026-08-01") -> DashboardState:
         recipients = self.list_recipients()
+        previews = self.call_plan_previews_with_same_day_history(recipients, call_date)
         return DashboardState(
             recipients=tuple(self._card_for_recipient(recipient) for recipient in recipients),
-            preflight_previews=build_call_plan_previews(list(recipients), call_date),
+            preflight_previews=previews,
             preflight_plans=self.list_preflight_plans(),
             approvals=self.list_approvals(),
             intake_results=self.list_intake_results(),
             service_requests=self.list_service_requests(),
             callback_requests=self.list_callback_requests(),
         )
+
+    def call_plan_previews_with_same_day_history(
+        self,
+        recipients: tuple[Recipient, ...],
+        call_date: str,
+    ):
+        previews = build_call_plan_previews(list(recipients), call_date)
+        return tuple(
+            replace(
+                preview,
+                same_day_call_count=count,
+                operator_repeat_available=count == 1,
+                operator_repeat_limit_reached=count >= 2,
+                same_day_repeat_warning=_same_day_repeat_warning(preview.recipient_label, count),
+            )
+            for preview in previews
+            for count in (self.count_same_day_live_calls(preview.recipient_id, call_date),)
+        )
+
+    def count_same_day_live_calls(self, recipient_id: str, call_date: str) -> int:
+        row = self.conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM call_runs
+            WHERE recipient_id = ?
+              AND mode = 'live'
+              AND started_at LIKE ?
+            """,
+            (recipient_id, f"{call_date}%"),
+        ).fetchone()
+        return int(row["count"] if row else 0)
 
     def create_callback_request(
         self,
@@ -1099,7 +1220,7 @@ class Repository:
                     request.queue,
                     request.sla_hours,
                     request.priority,
-                    request.status,
+                    "pending" if request.status == "ready_to_print" else request.status,
                     json.dumps(list(request.items)),
                     request.notes,
                     request.human_review_reason,
@@ -1148,6 +1269,24 @@ def _service_request_from_row(row: sqlite3.Row) -> StoredServiceRequest:
         items=_json_tuple(row["items"]),
         notes=row["notes"],
         human_review_reason=row["human_review_reason"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        update_count=int(row["update_count"]),
+        update_history=tuple(json.loads(row["update_history"] or "[]")),
+    )
+
+
+def _same_day_repeat_warning(recipient_label: str, count: int) -> str:
+    if count <= 0:
+        return ""
+    if count == 1:
+        return (
+            f"{recipient_label} has already received one live call today. "
+            "A second operator-initiated call requires explicit repeat-call awareness."
+        )
+    return (
+        f"{recipient_label} has already received {count} live calls today. "
+        "Operator-initiated repeat calling has reached the daily limit."
     )
 
 
@@ -1203,6 +1342,42 @@ def _callback_request_from_row(row: sqlite3.Row) -> CallbackRequest:
 def _json_tuple(raw: str) -> tuple:
     value = json.loads(raw or "[]")
     return tuple(value)
+
+
+def _json_list(raw: str) -> list:
+    value = json.loads(raw or "[]")
+    return value if isinstance(value, list) else []
+
+
+def _merge_items(existing: tuple[str, ...], incoming: tuple[str, ...]) -> tuple[str, ...]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for item in existing + incoming:
+        key = item.strip().lower()
+        if key and key not in seen:
+            merged.append(item)
+            seen.add(key)
+    return tuple(merged)
+
+
+def _merge_notes(existing: str, incoming: str) -> str:
+    current = existing.strip()
+    new = incoming.strip()
+    if not current:
+        return new
+    if not new or new in current:
+        return current
+    return f"{current}\nUpdate: {new}"
+
+
+def _merge_priority(existing: str, incoming: str) -> str:
+    order = {"normal": 0, "review": 1, "urgent": 2}
+    return incoming if order.get(incoming, 0) > order.get(existing, 0) else existing
+
+
+def _merge_status(existing: str, incoming: str) -> str:
+    order = {"pending": 0, "ready_to_print": 1, "review": 2}
+    return incoming if order.get(incoming, 0) > order.get(existing, 0) else existing
 
 
 def _authorized_contacts_json(recipient: Recipient) -> str:

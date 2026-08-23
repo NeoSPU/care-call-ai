@@ -23,6 +23,10 @@ const printPayload: PrintOrdersPayload = {
       items: ["Tinned soup"],
       notes: "Backend generated order.",
       human_review_reason: "",
+      created_at: "2026-08-23 10:15:00",
+      updated_at: "2026-08-23 10:15:00",
+      update_count: 0,
+      update_history: [{ event: "created", run_id: "run-test-001" }],
     },
     {
       id: "srv-api-002",
@@ -41,6 +45,10 @@ const printPayload: PrintOrdersPayload = {
       items: ["Prescription pickup"],
       notes: "Caregiver confirmed medication is needed today.",
       human_review_reason: "",
+      created_at: "2026-08-23 10:20:00",
+      updated_at: "2026-08-23 11:05:00",
+      update_count: 1,
+      update_history: [{ event: "created", run_id: "run-test-002" }],
     },
     {
       id: "srv-api-003",
@@ -59,6 +67,10 @@ const printPayload: PrintOrdersPayload = {
       items: [],
       notes: "Not printable yet.",
       human_review_reason: "Manual handling.",
+      created_at: "2026-08-23 09:30:00",
+      updated_at: "2026-08-23 09:30:00",
+      update_count: 0,
+      update_history: [],
     },
   ],
 };
@@ -75,24 +87,28 @@ describe("PrintableOrderSheet", () => {
     expect(screen.getByText(/Only ready-to-print requests become field handoff sheets/)).toBeTruthy();
   });
 
-  it("renders only backend ready-to-print service orders with care context and masked phones", () => {
+  it("renders only backend ready-to-print service orders in the operations table", () => {
     render(<PrintableOrderSheet orders={printPayload} />);
 
-    expect(screen.getAllByRole("heading", { name: "CareCall Service Order" })).toHaveLength(2);
-    expect(screen.getByText("Order srv-api-001 · Priority normal")).toBeTruthy();
-    expect(screen.getByText("Order srv-api-002 · Priority urgent")).toBeTruthy();
+    expect(screen.getByRole("table")).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Client" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Order date" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Urgency" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Order number" })).toBeTruthy();
+    expect(screen.getByText("srv-api-001")).toBeTruthy();
+    expect(screen.getByText("srv-api-002")).toBeTruthy();
     expect(screen.getByText("+1******4401")).toBeTruthy();
     expect(screen.queryByText("Sam Manual")).toBeNull();
-    expect(screen.getByText("alzheimer · moderate")).toBeTruthy();
+    expect(screen.getByText("Prescription pickup")).toBeTruthy();
     expect(screen.queryByText("+15550104401")).toBeNull();
   });
 
-  it("keeps fulfilment fields available for printed coordinator handoff", () => {
+  it("shows created and updated timestamps from backend order history", () => {
     render(<PrintableOrderSheet orders={printPayload} />);
 
-    expect(screen.getAllByText("Assigned to: ____________________")).toHaveLength(2);
-    expect(screen.getAllByText("Time: ____________________")).toHaveLength(2);
-    expect(screen.getAllByText("Signature: ____________________")).toHaveLength(2);
+    expect(screen.getAllByText(/Aug 23/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/0 updates/)).toBeTruthy();
+    expect(screen.getByText(/1 update/)).toBeTruthy();
   });
 
   it("invokes the browser print flow from the print button", () => {
@@ -100,9 +116,21 @@ describe("PrintableOrderSheet", () => {
     vi.stubGlobal("print", printSpy);
 
     render(<PrintableOrderSheet orders={printPayload} />);
-    fireEvent.click(screen.getByRole("button", { name: "Print sheet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Print filtered orders" }));
 
     expect(printSpy).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+  });
+
+  it("invokes scoped print from a single order row", () => {
+    const printSpy = vi.fn();
+    vi.stubGlobal("print", printSpy);
+
+    render(<PrintableOrderSheet orders={printPayload} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Print order" })[0]);
+
+    expect(printSpy).toHaveBeenCalledOnce();
+    expect(screen.getByText("Preparing print view for srv-api-001.")).toBeTruthy();
     vi.unstubAllGlobals();
   });
 

@@ -33,6 +33,27 @@ class RunResultsTest(unittest.TestCase):
         self.assertEqual(bundle.intake_result.status, IntakeStatus.COMPLETED)
         self.assertEqual(bundle.service_requests[0].category, NeedCategory.GROCERIES)
 
+    def test_completed_summary_only_payload_can_produce_printable_request(self):
+        record = CallRunRecord(
+            recipient_id="r-1",
+            idempotency_key="key-1",
+            status=CallRunStatus.COMPLETED,
+            run_id="run-1",
+            masked_phone="+1******1234",
+        )
+        bundle = process_call_result(
+            record,
+            {
+                "status": "completed",
+                "summary": "Alex asked for milk and bread for tomorrow.",
+            },
+        )
+
+        self.assertEqual(bundle.service_requests[0].category, NeedCategory.GROCERIES)
+        self.assertEqual(bundle.service_requests[0].items, ("bread", "milk"))
+        self.assertEqual(bundle.service_requests[0].priority, "urgent")
+        self.assertEqual(bundle.service_requests[0].status, "ready_to_print")
+
     def test_emergency_payload_routes_to_review(self):
         record = CallRunRecord("r-1", "key-1", CallRunStatus.COMPLETED)
         bundle = process_call_result(record, {"emergency_flag": True, "needs": []})

@@ -30,6 +30,10 @@ export type PlannedCallDto = {
   idempotency_key: string;
   blocked_reasons: string[];
   authorized_contacts?: AuthorizedContactDto[];
+  same_day_call_count?: number;
+  operator_repeat_available?: boolean;
+  operator_repeat_limit_reached?: boolean;
+  same_day_repeat_warning?: string;
 };
 
 export type PreflightPlanDto = {
@@ -84,6 +88,10 @@ export type ServiceRequestDto = {
   items: string[];
   notes: string;
   human_review_reason: string;
+  created_at?: string;
+  updated_at?: string;
+  update_count?: number;
+  update_history?: Array<Record<string, unknown>>;
 };
 
 export type CallbackRequestDto = {

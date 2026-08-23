@@ -58,15 +58,15 @@ class ServerApiPayloadTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["service_requests"]), 1)
         self.assertNotIn("+15550101001", repr(payload))
 
-    def test_demo_max_seed_recipient_uses_card_phone_not_env_override(self):
-        initialize_database(self.db_path, env={})
+    def test_runtime_demo_max_override_adds_masked_fictional_recipient(self):
+        initialize_database(self.db_path, env={"CARECALL_DEMO_MAX_PHONE": "+447700900123"})
         payload = dashboard_api_payload(self.db_path, "2026-08-01")
 
         max_preview = next(item for item in payload["planned_calls"] if item["recipient_id"] == "rec-demo-max")
         self.assertEqual(max_preview["recipient_label"], "Max Neous")
-        self.assertEqual(max_preview["masked_phone"], "+1******1006")
+        self.assertEqual(max_preview["masked_phone"], "+4*******0123")
         self.assertEqual(max_preview["authorized_contacts"][0]["name"], "Marija Neous")
-        self.assertNotIn("+15550101006", repr(payload))
+        self.assertNotIn("+447700900123", repr(payload))
 
     def test_recipient_api_payload_returns_detail_contract(self):
         payload = recipient_api_payload(self.db_path, "rec-003")
@@ -196,7 +196,7 @@ class ServerApiPayloadTests(unittest.TestCase):
 
 class _HeaderCaptureHandler(CareCallHandler):
     def __init__(self):
-        self.headers = {"Origin": "http://127.0.0.1:3000"}
+        self.headers = {"Origin": "http://127.0.0.1:3001"}
         self.wfile = BytesIO()
         self.status = None
         self.sent_headers = []
@@ -218,7 +218,7 @@ class ServerCorsTests(unittest.TestCase):
         handler.do_OPTIONS()
 
         self.assertEqual(handler.status, 204)
-        self.assertIn(("Access-Control-Allow-Origin", "http://127.0.0.1:3000"), handler.sent_headers)
+        self.assertIn(("Access-Control-Allow-Origin", "http://127.0.0.1:3001"), handler.sent_headers)
         self.assertIn(("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS"), handler.sent_headers)
         self.assertIn(("Access-Control-Allow-Headers", "Authorization, Content-Type"), handler.sent_headers)
 

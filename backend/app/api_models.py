@@ -34,6 +34,10 @@ def dashboard_payload(state: DashboardState) -> dict:
                 "idempotency_key": preview.idempotency_key if preview.ready else "",
                 "blocked_reasons": list(preview.blocked_reasons),
                 "authorized_contacts": _authorized_contacts(preview.authorized_contacts),
+                "same_day_call_count": preview.same_day_call_count,
+                "operator_repeat_available": preview.operator_repeat_available,
+                "operator_repeat_limit_reached": preview.operator_repeat_limit_reached,
+                "same_day_repeat_warning": preview.same_day_repeat_warning,
             }
             for preview in state.preflight_previews
         ],
@@ -289,6 +293,10 @@ def _preview(preview) -> dict:
         "idempotency_key": preview.idempotency_key if preview.ready else "",
         "blocked_reasons": list(preview.blocked_reasons),
         "authorized_contacts": _authorized_contacts(preview.authorized_contacts),
+        "same_day_call_count": preview.same_day_call_count,
+        "operator_repeat_available": preview.operator_repeat_available,
+        "operator_repeat_limit_reached": preview.operator_repeat_limit_reached,
+        "same_day_repeat_warning": preview.same_day_repeat_warning,
     }
 
 
@@ -343,6 +351,10 @@ def _service_request(request) -> dict:
         "items": list(request.items),
         "notes": request.notes,
         "human_review_reason": request.human_review_reason,
+        "created_at": request.created_at,
+        "updated_at": request.updated_at,
+        "update_count": request.update_count,
+        "update_history": list(request.update_history),
     }
 
 

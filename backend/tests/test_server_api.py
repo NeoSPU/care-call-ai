@@ -1,8 +1,11 @@
 import tempfile
 import unittest
 import subprocess
+import json
+from datetime import date
 from pathlib import Path
 
+from app.calle_execution import CallRunRecord, CallRunStatus
 from app.calle_readiness import CalleReadiness
 from app.repository import Repository, connect, init_schema, seed_database
 from app.server import (
@@ -15,6 +18,7 @@ from app.server import (
     execute_live_api_payload,
     import_run_result_api_payload,
     operations_dashboard_api_payload,
+    run_status_api_payload,
     service_requests_api_payload,
     save_special_handling_approval_api_payload,
     update_callback_request_api_payload,
@@ -369,7 +373,7 @@ class ServerCallApiTests(unittest.TestCase):
                 },
                 "authorization_phrase": "EXECUTE LIVE CALLS",
             },
-            env={},
+            env={"CARECALL_LIVE_CALLS_ENABLED": "true"},
         )
 
         self.assertFalse(dry_run["accepted"])
@@ -421,7 +425,7 @@ class ServerCallApiTests(unittest.TestCase):
                 },
                 "authorization_phrase": "EXECUTE LIVE CALLS",
             },
-            env={},
+            env={"CARECALL_LIVE_CALLS_ENABLED": "true"},
             readiness=ready(),
             runner=live_runner,
         )
@@ -463,9 +467,376 @@ class ServerCallApiTests(unittest.TestCase):
         self.assertEqual(imported["provider_status"], "completed")
         self.assertEqual(imported["intake_result"]["summary"], "Alex asked for milk and bread for tomorrow.")
         self.assertEqual(imported["service_requests"][0]["category"], "groceries")
+        self.assertTrue(imported["service_requests"][0]["created_at"])
+        self.assertTrue(imported["service_requests"][0]["updated_at"])
+        self.assertEqual(imported["service_requests"][0]["update_count"], 0)
+        self.assertEqual(imported["service_requests"][0]["update_history"][0]["event"], "created")
+        self.assertEqual(imported["service_requests"][0]["update_history"][0]["run_id"], stored_run_id)
         self.assertEqual(imported_again["service_requests"][0]["id"], imported["service_requests"][0]["id"])
         self.assertEqual(len(imported_requests), 1)
         self.assertIn(("calle", "get_call_run", "provider-run-456"), result_runner.commands)
+
+    def test_same_day_repeat_call_requires_explicit_repeat_acknowledgement(self):
+        call_date = date.today().isoformat()
+        conn = connect(self.db_path)
+        try:
+            repo = Repository(conn)
+            repo.save_call_runs(
+                plan_id="plan-repeat-existing",
+                approval_id="approval-repeat-existing",
+                records=[
+                    CallRunRecord(
+                        recipient_id="rec-001",
+                        idempotency_key="repeat-existing-key",
+                        status=CallRunStatus.RUNNING,
+                        masked_phone="+1******1001",
+                    )
+                ],
+                mode="live",
+            )
+        finally:
+            conn.close()
+
+        batch = create_batch_api_payload(
+            self.db_path,
+            {"selected_recipient_ids": ["rec-001"], "call_date": call_date},
+        )
+        preflight = create_preflight_api_payload(self.db_path, {"batch_id": batch["batch"]["id"]})
+        self.assertEqual(preflight["ready_previews"][0]["same_day_call_count"], 1)
+
+        rejected = approve_preflight_api_payload(
+            self.db_path,
+            {
+                "plan_id": preflight["plan_id"],
+                "approved_keys": preflight["ready_keys"],
+                "operator": "carecall-coordinator",
+                "confirmations": {
+                    "active_consent": True,
+                    "care_route_match": True,
+                    "exact_keyset": True,
+                    "real_side_effects": True,
+                },
+                "authorization_phrase": "EXECUTE LIVE CALLS",
+            },
+        )
+        self.assertFalse(rejected["approved"])
+        self.assertIn("Same-day repeat call acknowledgement is required.", rejected["blocked_reasons"])
+
+        approved = approve_preflight_api_payload(
+            self.db_path,
+            {
+                "plan_id": preflight["plan_id"],
+                "approved_keys": preflight["ready_keys"],
+                "operator": "carecall-coordinator",
+                "confirmations": {
+                    "active_consent": True,
+                    "care_route_match": True,
+                    "exact_keyset": True,
+                    "real_side_effects": True,
+                    "same_day_repeat_acknowledged": True,
+                },
+                "authorization_phrase": "EXECUTE LIVE CALLS",
+            },
+        )
+        self.assertTrue(approved["approved"])
+
+    def test_operator_same_day_repeat_limit_blocks_third_operator_call(self):
+        call_date = date.today().isoformat()
+        conn = connect(self.db_path)
+        try:
+            repo = Repository(conn)
+            repo.save_call_runs(
+                plan_id="plan-repeat-existing",
+                approval_id="approval-repeat-existing",
+                records=[
+                    CallRunRecord(
+                        recipient_id="rec-001",
+                        idempotency_key="repeat-existing-key-1",
+                        status=CallRunStatus.RUNNING,
+                        masked_phone="+1******1001",
+                    ),
+                    CallRunRecord(
+                        recipient_id="rec-001",
+                        idempotency_key="repeat-existing-key-2",
+                        status=CallRunStatus.RUNNING,
+                        masked_phone="+1******1001",
+                    ),
+                ],
+                mode="live",
+            )
+        finally:
+            conn.close()
+
+        batch = create_batch_api_payload(
+            self.db_path,
+            {"selected_recipient_ids": ["rec-001"], "call_date": call_date},
+        )
+        preflight = create_preflight_api_payload(self.db_path, {"batch_id": batch["batch"]["id"]})
+        rejected = approve_preflight_api_payload(
+            self.db_path,
+            {
+                "plan_id": preflight["plan_id"],
+                "approved_keys": preflight["ready_keys"],
+                "operator": "carecall-coordinator",
+                "confirmations": {
+                    "active_consent": True,
+                    "care_route_match": True,
+                    "exact_keyset": True,
+                    "real_side_effects": True,
+                    "same_day_repeat_acknowledged": True,
+                },
+                "authorization_phrase": "EXECUTE LIVE CALLS",
+            },
+        )
+
+        self.assertFalse(rejected["approved"])
+        self.assertIn("Operator-initiated same-day repeat call limit", " ".join(rejected["blocked_reasons"]))
+
+    def test_repeat_call_import_merges_into_same_day_category_order(self):
+        conn = connect(self.db_path)
+        try:
+            repo = Repository(conn)
+            first_run = repo.save_call_runs(
+                plan_id="plan-repeat-merge",
+                approval_id="approval-repeat-merge",
+                records=[
+                    CallRunRecord(
+                        recipient_id="rec-001",
+                        idempotency_key="repeat-merge-key-1",
+                        status=CallRunStatus.RUNNING,
+                        plan_id="provider-plan-1",
+                        run_id="provider-run-merge-1",
+                        masked_phone="+1******1001",
+                    )
+                ],
+                mode="live",
+            )[0]
+            second_run = repo.save_call_runs(
+                plan_id="plan-repeat-merge",
+                approval_id="approval-repeat-merge",
+                records=[
+                    CallRunRecord(
+                        recipient_id="rec-001",
+                        idempotency_key="repeat-merge-key-2",
+                        status=CallRunStatus.RUNNING,
+                        plan_id="provider-plan-2",
+                        run_id="provider-run-merge-2",
+                        masked_phone="+1******1001",
+                    )
+                ],
+                mode="live",
+            )[0]
+        finally:
+            conn.close()
+
+        runner = FakeRunner(
+            {
+                ("calle", "get_call_run", "provider-run-merge-1"): (
+                    0,
+                    json.dumps(
+                        {
+                            "status": "completed",
+                            "summary": "Alex asked for milk.",
+                            "needs": [
+                                {
+                                    "category": "groceries",
+                                    "items": ["milk"],
+                                    "urgency": "tomorrow",
+                                    "notes": "First call.",
+                                }
+                            ],
+                        }
+                    ),
+                    "",
+                ),
+                ("calle", "get_call_run", "provider-run-merge-2"): (
+                    0,
+                    json.dumps(
+                        {
+                            "status": "completed",
+                            "summary": "Alex added bread.",
+                            "needs": [
+                                {
+                                    "category": "groceries",
+                                    "items": ["bread"],
+                                    "urgency": "today",
+                                    "notes": "Repeat call update.",
+                                }
+                            ],
+                        }
+                    ),
+                    "",
+                ),
+            }
+        )
+
+        first = import_run_result_api_payload(self.db_path, first_run.id, runner=runner)
+        second = import_run_result_api_payload(self.db_path, second_run.id, runner=runner)
+        requests = service_requests_api_payload(self.db_path)["service_requests"]
+        merged = [
+            request
+            for request in requests
+            if request["id"].startswith("svc-run-")
+            and request["recipient_id"] == "rec-001"
+            and request["category"] == "groceries"
+            and "milk" in request["items"]
+        ]
+
+        self.assertEqual(first["service_requests"][0]["id"], second["service_requests"][0]["id"])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["items"], ["milk", "bread"])
+        self.assertEqual(merged[0]["priority"], "urgent")
+        self.assertEqual(merged[0]["update_count"], 1)
+        self.assertEqual([entry["event"] for entry in merged[0]["update_history"]], ["created", "updated"])
+
+        imported_again = import_run_result_api_payload(self.db_path, second_run.id, runner=runner)
+        self.assertEqual(imported_again["service_requests"][0]["update_count"], 1)
+
+    def test_import_extracts_developer_api_recipient_structured_result(self):
+        batch = create_batch_api_payload(
+            self.db_path,
+            {"selected_recipient_ids": ["rec-001"], "call_date": "2026-08-01"},
+        )
+        preflight = create_preflight_api_payload(self.db_path, {"batch_id": batch["batch"]["id"]})
+        approval = approve_preflight_api_payload(
+            self.db_path,
+            {
+                "plan_id": preflight["plan_id"],
+                "approved_keys": preflight["ready_keys"],
+                "operator": "carecall-coordinator",
+                "note": "Developer API nested result test.",
+                "confirmations": {
+                    "active_consent": True,
+                    "care_route_match": True,
+                    "exact_keyset": True,
+                    "real_side_effects": True,
+                },
+                "authorization_phrase": "EXECUTE LIVE CALLS",
+            },
+        )
+        live_runner = FakeRunner(
+            {
+                ("calle", "plan_call"): (0, '{"plan_id":"plan-123"}', ""),
+                ("calle", "run_call", "plan-123"): (0, '{"run_id":"provider-run-nested"}', ""),
+            }
+        )
+        live = execute_live_api_payload(
+            self.db_path,
+            {
+                "plan_id": preflight["plan_id"],
+                "approval_id": approval["approval"]["id"],
+                "approved_keys": preflight["ready_keys"],
+                "confirmations": {
+                    "active_consent": True,
+                    "care_route_match": True,
+                    "exact_keyset": True,
+                    "real_side_effects": True,
+                },
+                "authorization_phrase": "EXECUTE LIVE CALLS",
+            },
+            env={"CARECALL_LIVE_CALLS_ENABLED": "true"},
+            readiness=ready(),
+            runner=live_runner,
+        )
+        result_runner = FakeRunner(
+            {
+                ("calle", "get_call_run", "provider-run-nested"): (
+                    0,
+                    json.dumps(
+                        {
+                            "id": "provider-run-nested",
+                            "status": "completed",
+                            "recipient_results": [
+                                {
+                                    "structured_result": {
+                                        "summary": "Sofiia asked for bread and milk.",
+                                        "needs": [
+                                            {
+                                                "category": "groceries",
+                                                "items": ["bread", "milk"],
+                                                "urgency": "tomorrow",
+                                            }
+                                        ],
+                                    }
+                                }
+                            ],
+                        }
+                    ),
+                    "",
+                )
+            }
+        )
+
+        imported = import_run_result_api_payload(self.db_path, live["records"][0]["id"], runner=result_runner)
+
+        self.assertTrue(imported["imported"])
+        self.assertEqual(imported["service_requests"][0]["status"], "ready_to_print")
+        self.assertEqual(imported["service_requests"][0]["items"], ["bread", "milk"])
+
+    def test_failed_provider_import_marks_run_failed_and_routes_review_only(self):
+        batch = create_batch_api_payload(
+            self.db_path,
+            {"selected_recipient_ids": ["rec-001"], "call_date": "2026-08-01"},
+        )
+        preflight = create_preflight_api_payload(self.db_path, {"batch_id": batch["batch"]["id"]})
+        approval = approve_preflight_api_payload(
+            self.db_path,
+            {
+                "plan_id": preflight["plan_id"],
+                "approved_keys": preflight["ready_keys"],
+                "operator": "carecall-coordinator",
+                "note": "Failed provider import test.",
+                "confirmations": {
+                    "active_consent": True,
+                    "care_route_match": True,
+                    "exact_keyset": True,
+                    "real_side_effects": True,
+                },
+                "authorization_phrase": "EXECUTE LIVE CALLS",
+            },
+        )
+        live_runner = FakeRunner(
+            {
+                ("calle", "plan_call"): (0, '{"plan_id":"plan-123"}', ""),
+                ("calle", "run_call", "plan-123"): (0, '{"run_id":"provider-run-failed"}', ""),
+            }
+        )
+        live = execute_live_api_payload(
+            self.db_path,
+            {
+                "plan_id": preflight["plan_id"],
+                "approval_id": approval["approval"]["id"],
+                "approved_keys": preflight["ready_keys"],
+                "confirmations": {
+                    "active_consent": True,
+                    "care_route_match": True,
+                    "exact_keyset": True,
+                    "real_side_effects": True,
+                },
+                "authorization_phrase": "EXECUTE LIVE CALLS",
+            },
+            env={"CARECALL_LIVE_CALLS_ENABLED": "true"},
+            readiness=ready(),
+            runner=live_runner,
+        )
+        stored_run_id = live["records"][0]["id"]
+        result_runner = FakeRunner(
+            {
+                ("calle", "get_call_run", "provider-run-failed"): (
+                    0,
+                    '{"id":"provider-run-failed","status":"failed"}',
+                    "",
+                )
+            }
+        )
+
+        imported = import_run_result_api_payload(self.db_path, stored_run_id, runner=result_runner)
+        status = run_status_api_payload(self.db_path, stored_run_id)
+
+        self.assertTrue(imported["imported"])
+        self.assertEqual(imported["provider_status"], "failed")
+        self.assertEqual(status["run"]["status"], "failed")
+        self.assertEqual(imported["service_requests"][0]["status"], "review")
 
     def test_live_execution_rejects_when_provider_returns_failed_record(self):
         batch = create_batch_api_payload(
@@ -505,7 +876,7 @@ class ServerCallApiTests(unittest.TestCase):
                 },
                 "authorization_phrase": "EXECUTE LIVE CALLS",
             },
-            env={},
+            env={"CARECALL_LIVE_CALLS_ENABLED": "true"},
             readiness=ready(),
             runner=live_runner,
         )

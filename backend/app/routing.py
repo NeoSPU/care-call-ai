@@ -53,7 +53,7 @@ def route_intake_result(result: IntakeResult) -> tuple[ServiceRequest, ...]:
 def route_need(recipient_id: str, need: ExtractedNeed) -> ServiceRequest:
     queue, sla_hours = ROUTING_RULES[need.category]
     priority = "urgent" if need.urgency in {Urgency.TODAY, Urgency.TOMORROW} else "normal"
-    status = "review" if need.review_state == ReviewState.HUMAN_REVIEW else "pending"
+    status = "review" if need.review_state == ReviewState.HUMAN_REVIEW else "ready_to_print"
     reason = ""
     if status == "review":
         reason = "Need category or urgency requires coordinator review."

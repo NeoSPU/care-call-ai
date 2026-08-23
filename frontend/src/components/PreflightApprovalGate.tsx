@@ -22,7 +22,14 @@ const CONFIRMATION_LABELS = {
 } as const;
 
 type ConfirmationKey = keyof typeof CONFIRMATION_LABELS;
+type RepeatConfirmationKey = "same_day_repeat_acknowledged";
+type ConfirmationState = Record<ConfirmationKey, boolean> & Partial<Record<RepeatConfirmationKey, boolean>>;
 type ProgressStatus = "idle" | "submitting" | "waiting" | "imported" | "failed";
+type ActiveCallSession = {
+  runId: string;
+  startedAt: string;
+  plannedCount: number;
+};
 
 type PreflightApprovalGateProps = {
   operatorName?: string;
@@ -30,9 +37,10 @@ type PreflightApprovalGateProps = {
 };
 
 const AUTHORIZATION_PHRASE = "EXECUTE LIVE CALLS";
-const POLL_INTERVAL_MS = 8000;
+const POLL_INTERVAL_MS = process.env.NODE_ENV === "test" ? 100 : 8000;
+const ACTIVE_SESSION_STORAGE_KEY = "carecall.activeLiveCallSession";
 
-const emptyConfirmations: Record<ConfirmationKey, boolean> = {
+const emptyConfirmations: ConfirmationState = {
   active_consent: false,
   care_route_match: false,
   exact_keyset: false,
@@ -83,7 +91,7 @@ function readinessClass(ready: boolean) {
 export function PreflightApprovalGate({ operatorName = "carecall-coordinator", preflight }: PreflightApprovalGateProps) {
   const [currentPreflight, setCurrentPreflight] = useState(preflight);
   const [confirmations, setConfirmations] =
-    useState<Record<ConfirmationKey, boolean>>(emptyConfirmations);
+    useState<ConfirmationState>(emptyConfirmations);
   const [phrase, setPhrase] = useState("");
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
@@ -91,6 +99,7 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
   const [result, setResult] = useState<string>("");
   const [liveRunId, setLiveRunId] = useState("");
   const [providerStatus, setProviderStatus] = useState("");
+  const [sessionStartedAt, setSessionStartedAt] = useState("");
   const [progressStatus, setProgressStatus] = useState<ProgressStatus>("idle");
   const [importedRequestCount, setImportedRequestCount] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -107,25 +116,47 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
   const planId = currentPreflight.plan_id ?? "";
   const oneReadyRecipient = readyKeys.length === 1;
   const answererRulesVisible = groups.ready.length > 0;
+  const repeatPreviews = groups.ready.filter((preview) => (preview.same_day_call_count ?? 0) > 0);
+  const repeatAcknowledgementNeeded = repeatPreviews.some((preview) => preview.operator_repeat_available);
+  const repeatLimitReached = repeatPreviews.some((preview) => preview.operator_repeat_limit_reached);
+  const repeatAcknowledged = confirmations.same_day_repeat_acknowledged === true;
   const liveReady =
     Boolean(planId) &&
     oneReadyRecipient &&
     allConfirmed &&
+    (!repeatAcknowledgementNeeded || repeatAcknowledged) &&
+    !repeatLimitReached &&
     exactPhrase &&
     maxBatchCompliant &&
     approvalErrors.length === 0;
 
   useEffect(() => {
-    if (!progressOpen || !liveRunId || importedRequestCount !== null || progressStatus === "failed") {
+    const restored = restoreActiveCallSession();
+    if (!restored) {
+      return;
+    }
+    setLiveRunId(restored.runId);
+    setSessionStartedAt(restored.startedAt);
+    setProgressStatus("waiting");
+    setResult(activeSessionMessage(restored.startedAt));
+  }, []);
+
+  useEffect(() => {
+    if (!liveRunId || importedRequestCount !== null || progressStatus === "failed" || progressStatus === "imported") {
       return undefined;
     }
     const timer = window.setInterval(() => {
       void importLatestResult(liveRunId, true);
     }, POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [importedRequestCount, liveRunId, progressOpen, progressStatus]);
+  }, [importedRequestCount, liveRunId, progressStatus]);
 
   function setConfirmation(key: ConfirmationKey, value: boolean) {
+    setApprovalErrors([]);
+    setConfirmations((current) => ({ ...current, [key]: value }));
+  }
+
+  function setRepeatConfirmation(key: RepeatConfirmationKey, value: boolean) {
     setApprovalErrors([]);
     setConfirmations((current) => ({ ...current, [key]: value }));
   }
@@ -168,8 +199,10 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
     setResult("");
     setLiveRunId("");
     setProviderStatus("");
+    setSessionStartedAt("");
     setProgressStatus("idle");
     setImportedRequestCount(null);
+    clearActiveCallSession();
   }
 
   async function runLive() {
@@ -180,7 +213,9 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
     setProgressOpen(true);
     setApprovalOpen(false);
     setProgressStatus("submitting");
-    setResult("Submitting the approved call round to CALL-E.");
+    const startedAt = new Date().toISOString();
+    setSessionStartedAt(startedAt);
+    setResult(activeSessionMessage(startedAt));
     setApprovalErrors([]);
     try {
       const approvalResponse = await approvePreflight({
@@ -215,8 +250,13 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
       const runId = response.records[0]?.id ?? "";
       setLiveRunId(runId);
       setProgressStatus("waiting");
-      setResult(liveAcceptedMessage(response.real_calls_placed));
+      setResult(`${activeSessionMessage(startedAt)} ${liveAcceptedMessage(response.real_calls_placed)}`);
       if (runId) {
+        persistActiveCallSession({
+          runId,
+          startedAt,
+          plannedCount: readyKeys.length,
+        });
         void importLatestResult(runId, true);
       }
     } catch (error) {
@@ -246,6 +286,7 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
       }
       setImportedRequestCount(response.service_requests.length);
       setProgressStatus("imported");
+      clearActiveCallSession();
       setResult(
         `CALL-E result imported: ${response.service_requests.length} service request${
           response.service_requests.length === 1 ? "" : "s"
@@ -329,6 +370,9 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
                     <td>{preview.route}</td>
                     <td>
                       <span className={`status ${statusClass(preview)}`}>{rowLabel(preview)}</span>
+                      {preview.same_day_repeat_warning && (
+                        <small className="blockReason repeatWarning">{preview.same_day_repeat_warning}</small>
+                      )}
                       {preview.blocked_reasons.map((reason) => (
                         <small className="blockReason" key={reason}>{reason}</small>
                       ))}
@@ -423,7 +467,24 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
                   <span>{CONFIRMATION_LABELS[key]}</span>
                 </label>
               ))}
+              {repeatAcknowledgementNeeded && (
+                <label className={repeatAcknowledged ? "checkRow on repeatCheckRow" : "checkRow repeatCheckRow"}>
+                  <input
+                    checked={repeatAcknowledged}
+                    onChange={(event) => setRepeatConfirmation("same_day_repeat_acknowledged", event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>
+                    I understand this is a same-day repeat call and the agent will ask whether to update the previous request or add changes.
+                  </span>
+                </label>
+              )}
             </div>
+            {repeatLimitReached && (
+              <p className="errorText">
+                Operator-initiated same-day repeat calling has reached the daily limit for this recipient.
+              </p>
+            )}
             <label className="phraseField">
               <span>Authorization phrase</span>
               <input
@@ -489,6 +550,12 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
             <div className={`progressStatus ${progressStatus}`} role="status">
               <strong>{progressTitle(progressStatus)}</strong>
               <span>{result || "Preparing the call round."}</span>
+              {progressStatus === "waiting" && sessionStartedAt && (
+                <small>
+                  Started at {formatSessionTime(sessionStartedAt)}. You can safely close this window and keep working.
+                  The dialing session has already started and will continue with the call list approved at launch.
+                </small>
+              )}
               {providerStatus && <small>Provider status: {providerStatus}</small>}
             </div>
             <div className="gateActions horizontalActions">
@@ -510,6 +577,54 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
 
 function liveAcceptedMessage(realCallsPlaced: number) {
   return `Live execution accepted: ${realCallsPlaced} real call${realCallsPlaced === 1 ? "" : "s"} placed. Waiting for CALL-E to finish the result.`;
+}
+
+function activeSessionMessage(startedAt: string) {
+  return `The approved call chain started at ${formatSessionTime(startedAt)}. You can safely close the progress window and continue using Care Call AI; this dialing session will continue with the recipient list approved at launch.`;
+}
+
+function formatSessionTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function persistActiveCallSession(session: ActiveCallSession) {
+  try {
+    window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // The UI can still poll during the current page lifetime if storage is unavailable.
+  }
+}
+
+function restoreActiveCallSession() {
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<ActiveCallSession>;
+    if (!parsed.runId || !parsed.startedAt) {
+      return null;
+    }
+    return {
+      runId: parsed.runId,
+      startedAt: parsed.startedAt,
+      plannedCount: Number(parsed.plannedCount ?? 1),
+    } satisfies ActiveCallSession;
+  } catch {
+    return null;
+  }
+}
+
+function clearActiveCallSession() {
+  try {
+    window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+  } catch {
+    // Ignore storage cleanup failures; imported server state remains authoritative.
+  }
 }
 
 function progressTitle(status: ProgressStatus) {

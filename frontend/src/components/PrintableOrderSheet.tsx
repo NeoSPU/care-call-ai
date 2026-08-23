@@ -16,6 +16,7 @@ export function PrintableOrderSheet({ operatorName, orders, urgentCallbackCount 
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [recipientFilter, setRecipientFilter] = useState("all");
   const [areaFilter, setAreaFilter] = useState("all");
+  const [statusMessage, setStatusMessage] = useState("");
   const printable = orders.service_requests.filter(
     (request) => request.status === "ready_to_print",
   );
@@ -37,6 +38,15 @@ export function PrintableOrderSheet({ operatorName, orders, urgentCallbackCount 
       (areaFilter === "all" || request.recipient_delivery_area === areaFilter)
     );
   });
+  const categories = useMemo(
+    () => Array.from(new Set(printable.map((request) => printCategory(request.category)))).sort(),
+    [printable],
+  );
+
+  function printCurrentSelection(label = "filtered orders") {
+    setStatusMessage(`Preparing print view for ${label}.`);
+    print();
+  }
 
   const content = (
     <>
@@ -53,8 +63,8 @@ export function PrintableOrderSheet({ operatorName, orders, urgentCallbackCount 
           <a className="button secondary" href="/dashboard/operator">
             Operator panel
           </a>
-          <button className="button" onClick={() => print()}>
-            Print selected
+          <button className="button" onClick={() => printCurrentSelection("all visible orders")}>
+            Print visible orders
           </button>
         </div>
       </header>
@@ -97,8 +107,8 @@ export function PrintableOrderSheet({ operatorName, orders, urgentCallbackCount 
         <a className="button secondary" href="/dashboard/operator">
           Back
         </a>
-        <button className="button" onClick={() => print()}>
-          Print sheet
+        <button className="button" onClick={() => printCurrentSelection()}>
+          Print filtered orders
         </button>
       </div>
       <section className="printFilters" aria-label="Print order filters">
@@ -106,9 +116,9 @@ export function PrintableOrderSheet({ operatorName, orders, urgentCallbackCount 
           Type
           <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
             <option value="all">All ready orders</option>
-            <option value="medicine">Medicine</option>
-            <option value="food">Food / products</option>
-            <option value="services">Services</option>
+            {categories.map((category) => (
+              <option key={category} value={category}>{categoryLabel(category)}</option>
+            ))}
           </select>
         </label>
         <label>
@@ -131,6 +141,7 @@ export function PrintableOrderSheet({ operatorName, orders, urgentCallbackCount 
         </label>
         <span>{filtered.length} selected for print</span>
       </section>
+      {statusMessage && <p className="resultBox noPrint" role="status">{statusMessage}</p>}
       {printable.length === 0 && (
         <section className="orderSheet">
           <h1>No recipients ready for this view</h1>
@@ -143,52 +154,67 @@ export function PrintableOrderSheet({ operatorName, orders, urgentCallbackCount 
           <p>Change the type, recipient, or delivery area filter.</p>
         </section>
       )}
-      {filtered.map((request) => {
-        return (
-          <section className="orderSheet" key={request.id}>
-            <header>
-              <div>
-                <h1>CareCall Service Order</h1>
-                <p>Order {request.id} · Priority {request.priority}</p>
-              </div>
-              <div className="orderDate">2026-08-01</div>
-            </header>
-
-            <div className="orderGrid">
-              <div>
-                <h2>Recipient</h2>
-                <p>{request.recipient_name}</p>
-                <p>{request.recipient_delivery_area}</p>
-                <p>{request.recipient_masked_phone}</p>
-              </div>
-              <div>
-                <h2>Care Notes</h2>
-                <p>{request.care_summary}</p>
-                <p>{request.care_notes}</p>
-              </div>
-            </div>
-
-            <div className="orderBlock">
-              <h2>Items / Services</h2>
-              <ul>
-                {request.items.map((item) => (
-                  <li key={item}>
-                    <span className="checkbox" /> {item}
-                  </li>
-                ))}
-              </ul>
-              <p>{request.notes}</p>
-            </div>
-
-            <footer className="completion">
-              <span>Assigned to: ____________________</span>
-              <span>Time: ____________________</span>
-              <span>Completed: Yes / Partial / Not home</span>
-              <span>Signature: ____________________</span>
-            </footer>
-          </section>
-        );
-      })}
+      {filtered.length > 0 && (
+        <section className="ordersTableSection" aria-label="Printable orders table">
+          <table className="table ordersTable">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Order date</th>
+                <th>Urgency</th>
+                <th>Order number</th>
+                <th>Delivery area</th>
+                <th>Grouped needs</th>
+                <th className="noPrint">Print</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((request) => (
+                <tr key={request.id}>
+                  <td>
+                    <strong>{request.recipient_name}</strong>
+                    <span className="muted">{request.recipient_masked_phone}</span>
+                    <span className="muted">{request.recipient_address}</span>
+                  </td>
+                  <td>
+                    <span>{formatOrderTimestamp(request.created_at)}</span>
+                    <small>
+                      Updated {formatOrderTimestamp(request.updated_at)} · {request.update_count ?? 0} update
+                      {(request.update_count ?? 0) === 1 ? "" : "s"}
+                    </small>
+                  </td>
+                  <td>
+                    <span className={`status ${request.priority === "urgent" ? "blocked" : "ready"}`}>
+                      {request.priority}
+                    </span>
+                  </td>
+                  <td className="mono">{request.id}</td>
+                  <td>{request.recipient_delivery_area || "Unassigned"}</td>
+                  <td>
+                    <div className="orderNeedsGroup">
+                      <strong>{categoryLabel(printCategory(request.category))}</strong>
+                      <span>{deliveryDateText(request)}</span>
+                      <ul>
+                        {request.items.length > 0 ? (
+                          request.items.map((item) => <li key={item}>{item}</li>)
+                        ) : (
+                          <li>Coordinator review</li>
+                        )}
+                      </ul>
+                      {request.notes && <small>{request.notes}</small>}
+                    </div>
+                  </td>
+                  <td className="noPrint">
+                    <button className="button secondary" onClick={() => printCurrentSelection(request.id)} type="button">
+                      Print order
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
     </>
   );
 
@@ -214,4 +240,37 @@ function printCategory(category: string) {
     return "food";
   }
   return "services";
+}
+
+function categoryLabel(category: string) {
+  if (category === "medicine") {
+    return "Medicine";
+  }
+  if (category === "food") {
+    return "Food / products";
+  }
+  return "Services";
+}
+
+function deliveryDateText(request: PrintOrdersPayload["service_requests"][number]) {
+  if (request.priority === "urgent") {
+    return "Delivery date: today or coordinator-prioritised";
+  }
+  return "Delivery date: next planned fulfilment";
+}
+
+function formatOrderTimestamp(value?: string) {
+  if (!value) {
+    return "Not recorded";
+  }
+  const date = new Date(value.includes("T") ? value : `${value.replace(" ", "T")}Z`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString([], {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

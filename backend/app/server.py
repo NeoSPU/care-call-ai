@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import asdict, is_dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -33,7 +34,12 @@ from .calle_execution import CallRunRecord, CallRunStatus, execute_approved_prev
 from .calle_readiness import CalleReadiness, check_calle_readiness
 from .domain import (
     AuthorizedContact,
+    CallSuitability,
+    CareProfile,
     Condition,
+    Consent,
+    ConsentStatus,
+    Recipient,
     SafetyCategory,
     Severity,
 )
@@ -44,6 +50,7 @@ from .storage import DEFAULT_SEED_PATH, load_seed_recipients
 DEFAULT_DB_PATH = Path(os.environ.get("CARECALL_DB_PATH", "data/carecall.sqlite3"))
 BACKEND_API_CREDENTIAL_ENV = "CARECALL_BACKEND_API_TOKEN"
 REQUIRED_CONFIRMATIONS = ("active_consent", "care_route_match", "exact_keyset", "real_side_effects")
+REPEAT_CALL_CONFIRMATION = "same_day_repeat_acknowledged"
 LIVE_AUTHORIZATION_PHRASE = "EXECUTE LIVE CALLS"
 TERMINAL_PROVIDER_STATUSES = {
     "busy",
@@ -120,9 +127,49 @@ def initialize_database(db_path: str | Path = DEFAULT_DB_PATH, env: dict[str, st
         repo = Repository(conn)
         if not repo.list_recipients():
             seed_database(repo, load_seed_recipients(DEFAULT_SEED_PATH))
+        _apply_runtime_demo_overrides(repo, env)
         repo.reconcile_safety_routes()
     finally:
         conn.close()
+
+
+def _apply_runtime_demo_overrides(repo: Repository, env: dict[str, str]) -> None:
+    phone = env.get("CARECALL_DEMO_MAX_PHONE", "").strip()
+    if not phone:
+        return
+    repo.upsert_recipient(
+        Recipient(
+            id="rec-demo-max",
+            display_name="Max Neous",
+            phone_e164=phone,
+            consent=Consent(
+                status=ConsentStatus.EXPLICIT_CONSENT,
+                evidence="Runtime demo participant configured through CARECALL_DEMO_MAX_PHONE; do not commit real numbers.",
+            ),
+            care_profile=CareProfile(
+                condition=Condition.ALZHEIMER,
+                severity=Severity.MILD,
+                language="en",
+                timezone="Europe/London",
+                call_suitability=CallSuitability.DIRECT_CALL_OK,
+                communication_rules=(
+                    "short_simple_sentences",
+                    "ask_speaker_identity_first",
+                    "do_not_test_memory",
+                    "offer_simple_choices",
+                ),
+            ),
+            authorized_contacts=(
+                AuthorizedContact(
+                    name="Marija Neous",
+                    relationship="trusted_contact",
+                    can_answer_intake=True,
+                    preferred_goodbye="All the best, Ms Marija.",
+                ),
+            ),
+            notes="Runtime-only fictional demo card for the final CALL-E test; phone comes from local env.",
+        )
+    )
 
 
 def dashboard_api_payload(db_path: str | Path = DEFAULT_DB_PATH, call_date: str = "2026-08-01") -> dict[str, Any]:
@@ -294,6 +341,7 @@ def approve_preflight_api_payload(db_path: str | Path, payload: dict[str, Any]) 
             reasons.append("Approval must match the current exact ready keyset.")
         if not _all_confirmations(payload.get("confirmations", {})):
             reasons.append("All four confirmations are required.")
+        reasons.extend(_repeat_call_blockers(ready_previews, payload.get("confirmations", {})))
         if str(payload.get("authorization_phrase", "")) != LIVE_AUTHORIZATION_PHRASE:
             reasons.append("Authorization phrase must equal EXECUTE LIVE CALLS.")
         if reasons:
@@ -355,8 +403,11 @@ def execute_live_api_payload(
         submitted_keys = payload.get("approved_keys")
         if submitted_keys is not None and tuple(sorted(submitted_keys)) != tuple(sorted(plan.ready_keys)):
             blockers.append("Live execution requires the current exact keyset.")
+        if env.get("CARECALL_LIVE_CALLS_ENABLED") != "true":
+            blockers.append("Live calls are disabled unless CARECALL_LIVE_CALLS_ENABLED=true.")
         if not _all_confirmations(payload.get("confirmations", {})):
             blockers.append("All four confirmations are required for live execution.")
+        blockers.extend(_repeat_call_blockers(ready_previews, payload.get("confirmations", {})))
         if str(payload.get("authorization_phrase", "")) != LIVE_AUTHORIZATION_PHRASE:
             blockers.append("Authorization phrase must equal EXECUTE LIVE CALLS.")
         max_batch_size = _max_live_batch_size(env)
@@ -386,6 +437,15 @@ def execute_live_api_payload(
         stored = repo.save_call_runs(plan.id, approval.id, batch.records, mode="live")
         if not batch.success:
             reasons = tuple(record.error for record in batch.records if record.error) or ("CALL-E execution failed.",)
+            _log_event(
+                "live_execution_failed",
+                plan_id=plan.id,
+                approval_id=approval.id,
+                recipient_ids=[record.recipient_id for record in batch.records],
+                provider_plan_ids=[record.plan_id for record in batch.records if record.plan_id],
+                provider_run_ids=[record.run_id for record in batch.records if record.run_id],
+                reasons=list(reasons),
+            )
             return execution_payload(stored, False, "live", reasons, runner_commands=runner_commands)
         return execution_payload(stored, True, "live", runner_commands=runner_commands)
     finally:
@@ -419,6 +479,12 @@ def import_run_result_api_payload(db_path: str | Path, run_id: str, runner=None)
         provider_payload = fetch_call_result(run.provider_run_id) if runner is None else fetch_call_result(run.provider_run_id, runner)
         provider_status = _provider_status(provider_payload)
         if provider_status not in TERMINAL_PROVIDER_STATUSES:
+            _log_event(
+                "call_result_not_terminal",
+                run_id=run_id,
+                provider_run_id=run.provider_run_id,
+                provider_status=provider_status or "unknown",
+            )
             return {
                 "imported": False,
                 "provider_status": provider_status or "unknown",
@@ -426,6 +492,13 @@ def import_run_result_api_payload(db_path: str | Path, run_id: str, runner=None)
             }
 
         bundle = repo.save_run_result_bundle(run_id, _normalized_provider_result(provider_payload, provider_status))
+        if provider_status in FAILED_PROVIDER_STATUSES:
+            _log_event(
+                "call_result_failed",
+                run_id=run_id,
+                provider_run_id=run.provider_run_id,
+                provider_status=provider_status,
+            )
         payload = result_bundle_payload(bundle)
         payload["imported"] = True
         payload["provider_status"] = provider_status
@@ -655,7 +728,7 @@ class CareCallHandler(BaseHTTPRequestHandler):
 
     def _send_cors_headers(self) -> None:
         origin = self.headers.get("Origin")
-        allowed_origins = {"http://127.0.0.1:3000", "http://localhost:3000"}
+        allowed_origins = {"http://127.0.0.1:3001", "http://localhost:3001"}
         if origin in allowed_origins:
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
@@ -677,8 +750,8 @@ def run(host: str = "0.0.0.0", port: int = 8000) -> None:
 
 def _categorized_previews(repo: Repository, batch_id: str):
     batch = repo.get_batch(batch_id)
-    recipients = [repo.get_recipient(recipient_id) for recipient_id in batch.selected_recipient_ids]
-    previews = build_call_plan_previews(recipients, batch.call_date)
+    recipients = tuple(repo.get_recipient(recipient_id) for recipient_id in batch.selected_recipient_ids)
+    previews = repo.call_plan_previews_with_same_day_history(recipients, batch.call_date)
     ready = []
     manual = []
     blocked = []
@@ -746,6 +819,29 @@ def _all_confirmations(confirmations: dict) -> bool:
     return all(confirmations.get(name) is True for name in REQUIRED_CONFIRMATIONS)
 
 
+def _repeat_call_blockers(ready_previews, confirmations: dict) -> tuple[str, ...]:
+    repeat_previews = [preview for preview in ready_previews if preview.same_day_call_count > 0]
+    if not repeat_previews:
+        return ()
+
+    reasons: list[str] = []
+    limit_reached = [preview.recipient_label for preview in repeat_previews if preview.operator_repeat_limit_reached]
+    if limit_reached:
+        reasons.append(
+            "Operator-initiated same-day repeat call limit has been reached for: "
+            + ", ".join(limit_reached)
+            + "."
+        )
+
+    acknowledgement_missing = any(preview.operator_repeat_available for preview in repeat_previews) and confirmations.get(
+        REPEAT_CALL_CONFIRMATION
+    ) is not True
+    if acknowledgement_missing:
+        reasons.append("Same-day repeat call acknowledgement is required.")
+
+    return tuple(reasons)
+
+
 def _max_live_batch_size(env: dict[str, str]) -> int:
     try:
         return int(env.get("CARECALL_MAX_LIVE_BATCH_SIZE", "1"))
@@ -753,16 +849,19 @@ def _max_live_batch_size(env: dict[str, str]) -> int:
         return 1
 
 
+def _log_event(event: str, **fields: Any) -> None:
+    try:
+        print(json.dumps({"event": event, **fields}, ensure_ascii=False), file=sys.stderr, flush=True)
+    except Exception:
+        print(f'{{"event":"{event}","logging_error":true}}', file=sys.stderr, flush=True)
+
+
 def _provider_status(payload: dict[str, Any]) -> str:
     return str(payload.get("status", payload.get("state", ""))).strip().lower()
 
 
 def _normalized_provider_result(payload: dict[str, Any], provider_status: str) -> dict[str, Any]:
-    normalized = dict(payload)
-    structured = _provider_structured_result(payload)
-    if structured:
-        normalized.setdefault("summary", structured.get("summary", ""))
-        normalized.setdefault("needs", structured.get("needs", []))
+    normalized = _provider_structured_result(payload)
     if provider_status in NO_CONTACT_PROVIDER_STATUSES:
         normalized["status"] = "no_contact"
         normalized.setdefault("summary", f"CALL-E ended with {provider_status}; route for human review.")
@@ -780,22 +879,35 @@ def _normalized_provider_result(payload: dict[str, Any], provider_status: str) -
 
 
 def _provider_structured_result(payload: dict[str, Any]) -> dict[str, Any]:
-    recipients = payload.get("recipients")
-    if isinstance(recipients, list):
-        for recipient in recipients:
-            if not isinstance(recipient, dict):
-                continue
-            structured = recipient.get("structured_result")
-            if isinstance(structured, dict):
-                return structured
-    structured = payload.get("structured_result")
-    if isinstance(structured, dict):
-        return structured
-    return {}
+    candidates: list[Any] = [
+        payload.get("structured_result"),
+        payload.get("result"),
+        payload.get("recipient_result"),
+    ]
+    for key in ("recipient_results", "recipients"):
+        raw_items = payload.get(key)
+        if isinstance(raw_items, list):
+            for item in raw_items:
+                if isinstance(item, dict):
+                    candidates.extend(
+                        [
+                            item.get("structured_result"),
+                            item.get("result"),
+                            item.get("recipient_result"),
+                        ]
+                    )
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            normalized = dict(candidate)
+            for field in ("summary", "needs", "human_review"):
+                if field in payload and field not in normalized:
+                    normalized[field] = payload[field]
+            return normalized
+    return dict(payload)
 
 
 if __name__ == "__main__":
     run(
         host=os.environ.get("CARECALL_BACKEND_HOST", "0.0.0.0"),
-        port=int(os.environ.get("CARECALL_BACKEND_PORT", "8000")),
+        port=int(os.environ.get("CARECALL_BACKEND_PORT", "8001")),
     )

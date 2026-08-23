@@ -1,6 +1,7 @@
 import subprocess
 import unittest
 import json
+from dataclasses import replace
 
 from app.approval import OperatorApproval
 from app.call_planning import build_call_plan_previews
@@ -143,6 +144,15 @@ class CalleExecutionTest(unittest.TestCase):
         self.assertIn("practical support needs", task)
         self.assertIn("Do not provide medical", task)
         self.assertIn("human review", task)
+
+    def test_repeat_live_task_mentions_same_day_follow_up_and_order_update(self):
+        preview = build_call_plan_previews([recipient()], "2026-08-01")[0]
+
+        task = live_task_for_preview(replace(preview, same_day_call_count=1))
+
+        self.assertIn("same-day follow-up call", task)
+        self.assertIn("update the previous request", task)
+        self.assertIn("add new groceries", task)
 
     def test_live_execution_uses_fresh_provider_idempotency_key_per_attempt(self):
         previews = build_call_plan_previews([recipient()], "2026-08-01")
