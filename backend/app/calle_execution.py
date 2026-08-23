@@ -104,6 +104,22 @@ def live_task_for_preview(preview: CallPlanPreview) -> str:
     return " ".join(_trim_sentence(item) for item in instructions if item.strip())
 
 
+def live_plan_payload_for_preview(preview: CallPlanPreview, live_idempotency_key: str | None = None) -> dict[str, str]:
+    provider_key = live_idempotency_key or _new_live_idempotency_key()
+    live_task = live_task_for_preview(preview)
+    return {
+        "idempotency_key": provider_key,
+        "preview_idempotency_key": preview.idempotency_key,
+        "recipient_id": preview.recipient_id,
+        "to_phone": preview.target_phone_e164,
+        "route": preview.route,
+        "prompt": live_task,
+        "goal": live_task,
+        "language": preview.language,
+        "timezone": preview.timezone,
+    }
+
+
 def default_execution_runner() -> ExecutionRunner:
     if developer_api_enabled():
         return developer_api_runner_from_env()
@@ -132,18 +148,8 @@ def _execution_blockers(
 
 
 def _execute_single_preview(preview: CallPlanPreview, runner: ExecutionRunner) -> CallRunRecord:
-    live_idempotency_key = f"cc-live-{uuid.uuid4().hex}"
-    plan_payload = {
-        "idempotency_key": live_idempotency_key,
-        "preview_idempotency_key": preview.idempotency_key,
-        "recipient_id": preview.recipient_id,
-        "to_phone": preview.target_phone_e164,
-        "route": preview.route,
-        "prompt": live_task_for_preview(preview),
-        "goal": live_task_for_preview(preview),
-        "language": preview.language,
-        "timezone": preview.timezone,
-    }
+    plan_payload = live_plan_payload_for_preview(preview)
+    live_idempotency_key = plan_payload["idempotency_key"]
     plan_result = runner(("calle", "plan_call", json.dumps(plan_payload)), SAFE_CALLE_ENV)
     if plan_result.returncode != 0:
         return _failed_record(preview, plan_result.stderr or plan_result.stdout)
@@ -183,6 +189,10 @@ def _failed_record(preview: CallPlanPreview, error: str, plan_id: str = "") -> C
         error=error.strip() or "Unknown CALL-E execution failure.",
         masked_phone=preview.masked_phone,
     )
+
+
+def _new_live_idempotency_key() -> str:
+    return f"cc-live-{uuid.uuid4().hex}"
 
 
 def _compact_style(items: tuple[str, ...]) -> tuple[str, ...]:

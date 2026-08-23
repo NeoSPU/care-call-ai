@@ -9,14 +9,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from .call_planning import build_call_plan_preview
 from .calle_developer_api import build_call_body, settings_from_env
-from .calle_execution import live_task_for_preview
+from .calle_execution import live_plan_payload_for_preview
 from .repository import Repository, connect
 
 
@@ -65,19 +64,8 @@ def diagnose_payload(
     finally:
         conn.close()
 
-    provider_key = f"cc-live-{uuid.uuid4().hex}"
-    live_task = live_task_for_preview(preview)
-    args = {
-        "idempotency_key": provider_key,
-        "preview_idempotency_key": preview.idempotency_key,
-        "recipient_id": preview.recipient_id,
-        "to_phone": preview.target_phone_e164,
-        "route": preview.route,
-        "prompt": live_task,
-        "goal": live_task,
-        "language": preview.language,
-        "timezone": preview.timezone,
-    }
+    args = live_plan_payload_for_preview(preview)
+    provider_key = args["idempotency_key"]
     body = build_call_body(args, settings_from_env(env))
     sanitized = _sanitize_body(body, preview.masked_phone)
     recipients = body.get("recipients", [])
