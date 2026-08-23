@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { ReactNode } from "react";
 
 import {
   approveSpecialHandlingRecipient,
@@ -148,6 +149,40 @@ function severityClass(severity: string) {
     return "tag sevMod";
   }
   return "tag sevMild";
+}
+
+function StatusBadge({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className: string;
+}) {
+  return (
+    <span className={className}>
+      <span className="dot" />
+      {children}
+    </span>
+  );
+}
+
+function DetailField({
+  label,
+  value,
+  className = "",
+  valueClassName = "",
+}: {
+  label: string;
+  value: ReactNode;
+  className?: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className={`field ${className}`.trim()}>
+      <span className="fieldLabel">{label}</span>
+      <span className={`fieldValue ${valueClassName}`.trim()}>{value}</span>
+    </div>
+  );
 }
 
 function canReviewForAutomation(detail: RecipientDetailPayload) {
@@ -370,14 +405,12 @@ export function RecipientDetailClient({
             <p className="heroAddress">{currentDetail.recipient.address}</p>
           </div>
           <div className="heroFlags">
-            <span className={safetyBadgeClass(currentDetail.recipient.safety_category, currentDetail.recipient.blocked)}>
-              <span className="dot" />
+            <StatusBadge className={safetyBadgeClass(currentDetail.recipient.safety_category, currentDetail.recipient.blocked)}>
               {safetyLabels[currentDetail.recipient.safety_category]}
-            </span>
-            <span className={currentDetail.recipient.automation_eligible ? "badgeStatus stReady" : "badgeStatus stReview"}>
-              <span className="dot" />
+            </StatusBadge>
+            <StatusBadge className={currentDetail.recipient.automation_eligible ? "badgeStatus stReady" : "badgeStatus stReview"}>
               {currentDetail.recipient.automation_eligible ? "Auto-call eligible" : formatToken(currentDetail.recipient.automation_status)}
-            </span>
+            </StatusBadge>
           </div>
         </section>
 
@@ -600,38 +633,18 @@ export function RecipientDetailClient({
               ) : (
                 <>
                   <div className="fieldGrid">
-                    <div className="field">
-                      <span className="fieldLabel">Condition</span>
-                      <span className="fieldValue">{formatToken(currentDetail.care_profile.condition)}</span>
-                    </div>
-                    <div className="field">
-                      <span className="fieldLabel">Care profile</span>
-                      <span className="fieldValue">{careProfileText}</span>
-                    </div>
-                    <div className="field">
-                      <span className="fieldLabel">Phone</span>
-                      <span className="fieldValue num">{currentDetail.contact_channels.phone_e164}</span>
-                    </div>
-                    <div className="field">
-                      <span className="fieldLabel">Caregiver/staff phone</span>
-                      <span className="fieldValue num">{currentDetail.contact_channels.caregiver_phone_e164 || "Not set"}</span>
-                    </div>
-                    <div className="field">
-                      <span className="fieldLabel">Language</span>
-                      <span className="fieldValue">{currentDetail.care_profile.language}</span>
-                    </div>
-                    <div className="field">
-                      <span className="fieldLabel">Timezone</span>
-                      <span className="fieldValue">{currentDetail.care_profile.timezone}</span>
-                    </div>
-                    <div className="field full">
-                      <span className="fieldLabel">Automation status</span>
-                      <span className="fieldValue">{formatToken(currentDetail.recipient.automation_status)}</span>
-                    </div>
-                    <div className="field full">
-                      <span className="fieldLabel">Coordinator notes</span>
-                      <span className="fieldValue">{currentDetail.recipient.notes}</span>
-                    </div>
+                    <DetailField label="Condition" value={formatToken(currentDetail.care_profile.condition)} />
+                    <DetailField label="Care profile" value={careProfileText} />
+                    <DetailField label="Phone" value={currentDetail.contact_channels.phone_e164} valueClassName="num" />
+                    <DetailField
+                      label="Caregiver/staff phone"
+                      value={currentDetail.contact_channels.caregiver_phone_e164 || "Not set"}
+                      valueClassName="num"
+                    />
+                    <DetailField label="Language" value={currentDetail.care_profile.language} />
+                    <DetailField label="Timezone" value={currentDetail.care_profile.timezone} />
+                    <DetailField className="full" label="Automation status" value={formatToken(currentDetail.recipient.automation_status)} />
+                    <DetailField className="full" label="Coordinator notes" value={currentDetail.recipient.notes} />
                   </div>
                   {cardSaveStatus && <p className="resultBox" role="status">{cardSaveStatus}</p>}
                 </>
@@ -683,10 +696,9 @@ export function RecipientDetailClient({
           <article className="card">
             <div className="cardHead">
               <h3>D-08 Special Handling</h3>
-              <span className={safetyBadgeClass(currentDetail.recipient.safety_category, currentDetail.recipient.blocked)}>
-                <span className="dot" />
+              <StatusBadge className={safetyBadgeClass(currentDetail.recipient.safety_category, currentDetail.recipient.blocked)}>
                 {safetyLabels[currentDetail.recipient.safety_category]}
-              </span>
+              </StatusBadge>
             </div>
             <div className="cardBody">
               {currentDetail.recipient.blocked_reasons.length > 0 && (
