@@ -4,7 +4,7 @@ import json
 
 from app.approval import OperatorApproval
 from app.call_planning import build_call_plan_previews
-from app.calle_execution import CallRunStatus, execute_approved_previews, fetch_call_result
+from app.calle_execution import CallRunStatus, execute_approved_previews, fetch_call_result, live_task_for_preview
 from app.calle_readiness import CalleReadiness
 from app.domain import (
     CallSuitability,
@@ -113,8 +113,60 @@ class CalleExecutionTest(unittest.TestCase):
         self.assertEqual(batch.records[0].plan_id, "plan-123")
         self.assertEqual(batch.records[0].run_id, "run-456")
         self.assertEqual(runner.commands[0][0:2], ("calle", "plan_call"))
-        self.assertEqual(json.loads(runner.commands[0][2])["to_phone"], "+15550101234")
+        payload = json.loads(runner.commands[0][2])
+        self.assertEqual(payload["to_phone"], "+15550101234")
+        self.assertLess(len(payload["goal"]), len(previews[0].prompt_preview))
+        self.assertLess(len(payload["goal"]), 1000)
+        self.assertIn("Capture practical needs", payload["goal"])
         self.assertEqual(runner.commands[1], ("calle", "run_call", "plan-123"))
+
+    def test_live_task_is_compact_but_keeps_safety_boundaries(self):
+        preview = build_call_plan_previews(
+            [
+                recipient(
+                    care_profile=CareProfile(
+                        Condition.ALZHEIMER,
+                        Severity.MILD,
+                        "en",
+                        "Europe/London",
+                        CallSuitability.DIRECT_CALL_OK,
+                    )
+                )
+            ],
+            "2026-08-01",
+        )[0]
+
+        task = live_task_for_preview(preview)
+
+        self.assertLess(len(task), 1000)
+        self.assertIn("Call Test Recipient", task)
+        self.assertIn("practical support needs", task)
+        self.assertIn("Do not provide medical", task)
+        self.assertIn("human review", task)
+
+    def test_live_execution_uses_fresh_provider_idempotency_key_per_attempt(self):
+        previews = build_call_plan_previews([recipient()], "2026-08-01")
+        runner = FakeRunner(
+            {
+                ("calle", "plan_call"): (0, '{"plan_id":"plan-123"}', ""),
+                ("calle", "run_call", "plan-123"): (0, '{"run_id":"run-456"}', ""),
+            }
+        )
+
+        first = execute_approved_previews(previews, approval_for(previews), ready(), runner)
+        second = execute_approved_previews(previews, approval_for(previews), ready(), runner)
+
+        first_key = json.loads(runner.commands[0][2])["idempotency_key"]
+        second_key = json.loads(runner.commands[2][2])["idempotency_key"]
+        preview_key = json.loads(runner.commands[0][2])["preview_idempotency_key"]
+        self.assertNotEqual(first_key, previews[0].idempotency_key)
+        self.assertNotEqual(first_key, second_key)
+        self.assertLessEqual(len(first_key), 48)
+        self.assertTrue(first_key.startswith("cc-live-"))
+        self.assertTrue(second_key.startswith("cc-live-"))
+        self.assertEqual(preview_key, previews[0].idempotency_key)
+        self.assertEqual(first.records[0].idempotency_key, first_key)
+        self.assertEqual(second.records[0].idempotency_key, second_key)
 
     def test_fetch_call_result_parses_json(self):
         runner = FakeRunner({("calle", "get_call_run", "run-456"): (0, '{"status":"completed"}', "")})

@@ -17,7 +17,7 @@ It helps coordinators safely prepare outreach rounds, review the planned call li
 
 ## Live Demo And Links
 
-- Functional demo app: `<add https://care.alexraixon.com after deployment verification>`
+- Functional demo app: https://care.alexraixon.com
 - Demo video: `<add YouTube or Vimeo URL>`
 - CALL-E contribution PR: `<add CALLE-AI/awesome-phone-call-agents PR URL>`
 - Devpost project: `<add Devpost URL>`

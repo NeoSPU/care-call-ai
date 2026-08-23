@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import uuid
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -78,6 +79,31 @@ def fetch_call_result(run_id: str, runner: ExecutionRunner | None = None) -> dic
     return _json_or_text(result.stdout)
 
 
+def live_task_for_preview(preview: CallPlanPreview) -> str:
+    goal = preview.call_goal
+    instructions = [
+        f"Call {preview.recipient_label} in {preview.language or 'en'}.",
+        f"Opening: {goal.opening}",
+        "If the speaker is unclear, politely ask who is speaking.",
+        "Only collect practical support needs from the recipient or an authorized answerer.",
+    ]
+    style = _compact_style(goal.communication_style)
+    if style:
+        instructions.append("Communication style: " + "; ".join(style) + ".")
+    if goal.allowed_questions:
+        instructions.append("Ask: " + " ".join(goal.allowed_questions[:3]))
+    instructions.extend(
+        [
+            "Capture practical needs only when speaker-confirmed; never turn your own examples into orders.",
+            "Confirm quantities, package sizes, and urgency.",
+            "Do not provide medical, legal, financial, password, payment, or emergency advice.",
+            "If the person sounds unsafe, distressed, or in immediate danger, stop intake and mark human review.",
+            "End politely with a personalized goodbye when the speaker name is known.",
+        ]
+    )
+    return " ".join(_trim_sentence(item) for item in instructions if item.strip())
+
+
 def default_execution_runner() -> ExecutionRunner:
     if developer_api_enabled():
         return developer_api_runner_from_env()
@@ -106,13 +132,15 @@ def _execution_blockers(
 
 
 def _execute_single_preview(preview: CallPlanPreview, runner: ExecutionRunner) -> CallRunRecord:
+    live_idempotency_key = f"cc-live-{uuid.uuid4().hex}"
     plan_payload = {
-        "idempotency_key": preview.idempotency_key,
+        "idempotency_key": live_idempotency_key,
+        "preview_idempotency_key": preview.idempotency_key,
         "recipient_id": preview.recipient_id,
         "to_phone": preview.target_phone_e164,
         "route": preview.route,
-        "prompt": preview.prompt_preview,
-        "goal": preview.prompt_preview,
+        "prompt": live_task_for_preview(preview),
+        "goal": live_task_for_preview(preview),
         "language": preview.language,
         "timezone": preview.timezone,
     }
@@ -138,7 +166,7 @@ def _execute_single_preview(preview: CallPlanPreview, runner: ExecutionRunner) -
 
     return CallRunRecord(
         recipient_id=preview.recipient_id,
-        idempotency_key=preview.idempotency_key,
+        idempotency_key=live_idempotency_key,
         status=CallRunStatus.RUNNING,
         plan_id=plan_id,
         run_id=run_id,
@@ -155,6 +183,37 @@ def _failed_record(preview: CallPlanPreview, error: str, plan_id: str = "") -> C
         error=error.strip() or "Unknown CALL-E execution failure.",
         masked_phone=preview.masked_phone,
     )
+
+
+def _compact_style(items: tuple[str, ...]) -> tuple[str, ...]:
+    selected: list[str] = []
+    for item in items:
+        lowered = item.lower()
+        if any(
+            marker in lowered
+            for marker in (
+                "short",
+                "one question",
+                "calm",
+                "plain language",
+                "extra time",
+                "speak clearly",
+                "simple choices",
+                "warm",
+                "concise",
+            )
+        ):
+            selected.append(_trim_sentence(item))
+        if len(selected) == 3:
+            break
+    return tuple(selected)
+
+
+def _trim_sentence(value: str, limit: int = 220) -> str:
+    text = " ".join(value.strip().split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "."
 
 
 def _json_or_text(output: str) -> dict:

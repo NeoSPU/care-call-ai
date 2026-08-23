@@ -24,7 +24,7 @@ class FinalReadinessCheckTests(unittest.TestCase):
         )
 
         self.assertFalse([result for result in results if result.level == "fail"])
-        self.assertEqual(3, len([result for result in results if result.level == "warn"]))
+        self.assertEqual(2, len([result for result in results if result.level == "warn"]))
 
     def test_readiness_fails_when_live_batch_size_is_above_one(self):
         results = final_readiness_check.run_checks(

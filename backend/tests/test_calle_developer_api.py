@@ -29,12 +29,12 @@ class DeveloperApiRunnerTests(unittest.TestCase):
             requests.append(request)
             self.assertEqual(timeout, 45)
             body = json.loads(request.data.decode("utf-8"))
-            self.assertEqual(body["task"], "Ask Alex what groceries are needed tomorrow.")
-            self.assertEqual(body["recipients"][0]["phones"], ["+447700900123"])
-            self.assertEqual(body["recipients"][0]["region"], "GB")
-            self.assertEqual(body["recipients"][0]["locale"], "en-GB")
+            self.assertEqual(body["task"], "Call +447700900123. Ask Alex what groceries are needed tomorrow.")
+            self.assertNotIn("recipients", body)
+            self.assertNotIn("result_schema", body)
+            self.assertNotIn("recipient_result_schema", body)
             self.assertEqual(body["metadata"]["recipient_id"], "rec-demo-max")
-            self.assertNotIn("summary", body["recipient_result_schema"]["properties"])
+            self.assertEqual(body["metadata"]["preview_idempotency_key"], "carecall-preview-key-1")
             return FakeResponse({"id": "call-123", "status": "queued"})
 
         runner = DeveloperApiRunner(
@@ -54,6 +54,7 @@ class DeveloperApiRunnerTests(unittest.TestCase):
                     json.dumps(
                         {
                             "idempotency_key": "carecall-key-1",
+                            "preview_idempotency_key": "carecall-preview-key-1",
                             "recipient_id": "rec-demo-max",
                             "to_phone": "+447700900123",
                             "goal": "Ask Alex what groceries are needed tomorrow.",
@@ -72,6 +73,68 @@ class DeveloperApiRunnerTests(unittest.TestCase):
         self.assertEqual(requests[0].full_url, "https://api.heycall-e.com/v1/calls")
         self.assertEqual(requests[0].headers["Authorization"], "Bearer test-key")
         self.assertEqual(requests[0].headers["Idempotency-key"], "carecall-key-1")
+
+    def test_can_include_explicit_recipients_for_legacy_diagnostics(self):
+        requests = []
+
+        def fake_urlopen(request, timeout):
+            requests.append(request)
+            return FakeResponse({"id": "call-123", "status": "queued"})
+
+        runner = DeveloperApiRunner(
+            DeveloperApiSettings(
+                api_key="test-key",
+                include_recipients=True,
+            )
+        )
+        runner(
+            (
+                "calle",
+                "plan_call",
+                json.dumps(
+                    {
+                        "idempotency_key": "key-1",
+                        "to_phone": "+447700900123",
+                        "goal": "Ask Alex what groceries are needed tomorrow.",
+                    }
+                ),
+            ),
+            {},
+        )
+
+        with patch("urllib.request.urlopen", fake_urlopen):
+            result = runner(("calle", "run_call", "key-1"), {})
+
+        body = json.loads(requests[0].data.decode("utf-8"))
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(body["task"], "Ask Alex what groceries are needed tomorrow.")
+        self.assertEqual(body["recipients"][0]["phones"], ["+447700900123"])
+        self.assertEqual(body["recipients"][0]["region"], "GB")
+        self.assertEqual(body["recipients"][0]["locale"], "en-GB")
+
+    def test_can_include_result_schemas_for_legacy_diagnostics(self):
+        requests = []
+
+        def fake_urlopen(request, timeout):
+            requests.append(request)
+            return FakeResponse({"id": "call-123", "status": "queued"})
+
+        runner = DeveloperApiRunner(
+            DeveloperApiSettings(
+                api_key="test-key",
+                include_schemas=True,
+            )
+        )
+        runner(("calle", "plan_call", json.dumps({"idempotency_key": "key-1", "to_phone": "+447700900123"})), {})
+
+        with patch("urllib.request.urlopen", fake_urlopen):
+            result = runner(("calle", "run_call", "key-1"), {})
+
+        body = json.loads(requests[0].data.decode("utf-8"))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("result_schema", body)
+        self.assertIn("recipient_result_schema", body)
+        self.assertNotIn("summary", body["recipient_result_schema"]["properties"])
 
     def test_get_call_result_reads_call_status(self):
         requests = []

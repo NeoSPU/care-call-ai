@@ -35,7 +35,6 @@ REQUIRED_FILES = (
 )
 
 REQUIRED_FORM_WARNINGS = (
-    "<add https://care.alexraixon.com after deployment verification>",
     "<add YouTube or Vimeo URL>",
     "<add CALLE-AI/awesome-phone-call-agents PR URL>",
 )

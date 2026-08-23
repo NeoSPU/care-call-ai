@@ -1,7 +1,7 @@
 """Server-side CALL-E Developer API runner.
 
-This is the public demo integration path. Operators provide the official
-dashboard API key in backend `.env`; browser code never sees it.
+Operators provide the official dashboard API key in backend runtime secrets;
+browser code never sees it.
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ CALLE_PROVIDER_ENV = "CARECALL_CALLE_PROVIDER"
 CALLE_API_KEY_ENV = "CARECALL_CALLE_API_KEY"
 CALLE_API_BASE_URL_ENV = "CARECALL_CALLE_API_BASE_URL"
 CALLE_REGION_ENV = "CARECALL_CALLE_REGION"
+CALLE_INCLUDE_SCHEMAS_ENV = "CARECALL_CALLE_INCLUDE_SCHEMAS"
+CALLE_INCLUDE_RECIPIENTS_ENV = "CARECALL_CALLE_INCLUDE_RECIPIENTS"
 DEFAULT_API_BASE_URL = "https://api.heycall-e.com"
 
 
@@ -28,6 +30,8 @@ class DeveloperApiSettings:
     base_url: str = DEFAULT_API_BASE_URL
     region: str = "GB"
     timeout_seconds: int = 45
+    include_schemas: bool = False
+    include_recipients: bool = False
 
     @property
     def configured(self) -> bool:
@@ -50,6 +54,8 @@ def settings_from_env(env: dict[str, str] | None = None) -> DeveloperApiSettings
         base_url=env.get(CALLE_API_BASE_URL_ENV, DEFAULT_API_BASE_URL).strip() or DEFAULT_API_BASE_URL,
         region=env.get(CALLE_REGION_ENV, "GB").strip() or "GB",
         timeout_seconds=timeout,
+        include_schemas=env.get(CALLE_INCLUDE_SCHEMAS_ENV, "").strip().lower() in {"1", "true", "yes"},
+        include_recipients=env.get(CALLE_INCLUDE_RECIPIENTS_ENV, "").strip().lower() in {"1", "true", "yes"},
     )
 
 
@@ -95,28 +101,7 @@ class DeveloperApiRunner:
         return subprocess.CompletedProcess(command, 2, "", f"Unsupported CALL-E API command: {command}")
 
     def _create_call(self, args: dict[str, Any]) -> dict[str, Any]:
-        phone = str(args.get("to_phone", "")).strip()
-        task = str(args.get("goal", args.get("prompt", ""))).strip()
-        language = str(args.get("language", "en")).strip() or "en"
-        locale = _locale_for(language, self.settings.region)
-        body = {
-            "task": task,
-            "recipients": [
-                {
-                    "phones": [phone],
-                    "region": self.settings.region,
-                    "locale": locale,
-                }
-            ],
-            "result_schema": _task_result_schema(),
-            "recipient_result_schema": _recipient_result_schema(),
-            "metadata": {
-                "source": "care-call-ai",
-                "recipient_id": str(args.get("recipient_id", "")),
-                "idempotency_key": str(args.get("idempotency_key", "")),
-                "route": str(args.get("route", "")),
-            },
-        }
+        body = build_call_body(args, self.settings)
         return self._request("POST", "/v1/calls", body, idempotency_key=str(args.get("idempotency_key", "")))
 
     def _get_call(self, call_id: str) -> dict[str, Any]:
@@ -146,6 +131,43 @@ class DeveloperApiRunner:
         if isinstance(parsed, dict):
             return parsed
         return {"value": parsed}
+
+
+def build_call_body(args: dict[str, Any], settings: DeveloperApiSettings) -> dict[str, Any]:
+    phone = str(args.get("to_phone", "")).strip()
+    task = str(args.get("goal", args.get("prompt", ""))).strip()
+    language = str(args.get("language", "en")).strip() or "en"
+    locale = _locale_for(language, settings.region)
+    task = _task_with_phone(task, phone) if phone and not settings.include_recipients else task
+    body = {
+        "task": task,
+        "metadata": {
+            "source": "care-call-ai",
+            "recipient_id": str(args.get("recipient_id", "")),
+            "idempotency_key": str(args.get("idempotency_key", "")),
+            "preview_idempotency_key": str(args.get("preview_idempotency_key", "")),
+            "route": str(args.get("route", "")),
+        },
+    }
+    if settings.include_recipients:
+        body["recipients"] = [
+            {
+                "phones": [phone],
+                "region": settings.region,
+                "locale": locale,
+            }
+        ]
+    if settings.include_schemas:
+        body["result_schema"] = _task_result_schema()
+        body["recipient_result_schema"] = _recipient_result_schema()
+    return body
+
+
+def _task_with_phone(task: str, phone: str) -> str:
+    normalized_task = task.strip()
+    if phone in normalized_task:
+        return normalized_task
+    return f"Call {phone}. {normalized_task}".strip()
 
 
 def _http_error_message(exc: urllib.error.HTTPError) -> str:
