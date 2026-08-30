@@ -1,4 +1,4 @@
-import { createMemoryRateLimiter, createPrivateClientKey, type RateLimiter } from "../assistant/rate-limit";
+import { createMemoryRateLimiter, createPrivateClientKey, type RateLimiter } from "../rate-limit";
 
 const MAX_NAME_LENGTH = 120;
 const MAX_EMAIL_LENGTH = 160;

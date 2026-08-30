@@ -68,7 +68,7 @@ export function createRedisRateLimiter(options: RedisRateLimiterOptions): RateLi
           "EVAL",
           FIXED_WINDOW_SCRIPT,
           "1",
-          `carecall:assistant:rate:${clientKey}`,
+          `carecall:rate:${clientKey}`,
           String(options.windowMs),
         ]),
         cache: "no-store",

@@ -4,7 +4,7 @@ import {
   createCallbackRequestPostHandler,
   parseCallbackTokens,
 } from "./route-handler";
-import type { RateLimiter } from "../assistant/rate-limit";
+import type { RateLimiter } from "../rate-limit";
 
 const allowAllLimiter: RateLimiter = {
   consume: async () => ({ allowed: true, retryAfterSeconds: 0 }),

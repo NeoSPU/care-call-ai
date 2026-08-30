@@ -60,9 +60,7 @@ Care Call AI lets coordinators:
 - print grouped fulfilment sheets with checkboxes and signoff lines;
 - monitor urgent callback requests in a separate queue;
 - accept token-protected Siri Shortcut callback requests for registered
-  recipients;
-- answer product and workflow questions through a secure text and voice
-  assistant pattern.
+  recipients.
 
 ## Screens
 
@@ -86,8 +84,8 @@ The project is safe by default:
 - repeated recent calls are blocked from unattended automation;
 - real phones are not committed;
 - protected backend calls require a bearer token;
-- browser code does not receive backend, CALL-E, assistant, or support
-  delivery credentials.
+- browser code does not receive backend, CALL-E, callback, or support delivery
+  credentials.
 
 Care Call AI is not a CRM replacement, medical device, emergency service,
 clinical decision system, or legal/financial/medical advice tool. It does not
@@ -173,17 +171,14 @@ CARECALL_SIRI_CALLBACK_TOKENS=rec-001=<recipient callback token>
 Optional frontend server runtime variables:
 
 ```text
-CH_RAIXON_ENABLED=false
-CH_RAIXON_API_URL=<assistant API URL if enabled>
-CH_RAIXON_SERVICE_TOKEN=<assistant service token if enabled>
 CARECALL_SUPPORT_EMAIL_ENDPOINT=<server-side support delivery endpoint>
 CARECALL_SUPPORT_EMAIL_TOKEN=<server-side support delivery token>
 CARECALL_SUPPORT_RATE_LIMIT_KEY_SECRET=<long random rate-limit secret>
 ```
 
-Never place backend tokens, CALL-E keys, assistant service tokens, or support
-delivery tokens in variables prefixed with `NEXT_PUBLIC_` or `VITE_`. Browser
-code must call same-origin frontend routes only; those routes attach server-side
+Never place backend tokens, CALL-E keys, callback tokens, or support delivery
+tokens in variables prefixed with `NEXT_PUBLIC_` or `VITE_`. Browser code must
+call same-origin frontend routes only; those routes attach server-side
 credentials when talking to protected backend services.
 
 ## Architecture
@@ -198,15 +193,6 @@ Next.js frontend
   -> guarded CALL-E execution
   -> conservative call-result import
   -> Help delivered orders and printable sheets
-```
-
-The assistant follows the same server-side credential pattern:
-
-```text
-Assistant widget
-  -> same-origin assistant proxy
-  -> CareCall assistant runtime
-  -> grounded CareCall knowledge pack
 ```
 
 This repository is a sanitized public hackathon edition. It keeps the working

@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
-import { createMemoryRateLimiter, type RateLimiter } from "../assistant/rate-limit";
+import { createMemoryRateLimiter, type RateLimiter } from "../rate-limit";
 
 const CALLBACK_ERROR = "The callback request could not be accepted. Please contact support if the problem continues.";
 const MAX_REQUEST_TEXT_LENGTH = 280;
