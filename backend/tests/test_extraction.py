@@ -3,6 +3,7 @@ import unittest
 from app.extraction import (
     IntakeStatus,
     NeedCategory,
+    ReviewReasonCode,
     ReviewState,
     Urgency,
     extract_intake_result,
@@ -68,6 +69,24 @@ class ExtractionTest(unittest.TestCase):
         self.assertFalse(result.human_review)
         self.assertEqual(result.needs[0].category, NeedCategory.GROCERIES)
         self.assertEqual(result.needs[0].items, ("bread", "milk"))
+        self.assertEqual(result.needs[0].urgency, Urgency.TOMORROW)
+
+    def test_callback_summary_extracts_broth_quantity_as_groceries(self):
+        result = extract_intake_result(
+            "r-1",
+            {
+                "status": "completed",
+                "summary": (
+                    "The call was completed. The recipient authorized the conversation and confirmed "
+                    "an added practical support request: 1 package of broth needed for tomorrow, "
+                    "with no other additions."
+                ),
+            },
+        )
+
+        self.assertFalse(result.human_review)
+        self.assertEqual(result.needs[0].category, NeedCategory.GROCERIES)
+        self.assertEqual(result.needs[0].items, ("1 package of broth",))
         self.assertEqual(result.needs[0].urgency, Urgency.TOMORROW)
 
     def test_urgency_prefers_answer_over_agent_question_options(self):
@@ -146,6 +165,115 @@ class ExtractionTest(unittest.TestCase):
 
         self.assertEqual(result.needs[0].items, ("one package of porridge oats",))
 
+    def test_summary_with_no_additional_needs_overrides_structured_example_categories(self):
+        result = extract_intake_result(
+            "r-1",
+            {
+                "status": "completed",
+                "summary": (
+                    "Call completed. CareCall captured the practical support request and urgency: "
+                    "a grocery need for a 1-litre bottle of milk, requested for tomorrow, "
+                    "with no additional practical needs reported. "
+                    "What other practical support do you need, if any? No need."
+                ),
+                "needs": [
+                    {"category": "groceries", "items": ["milk"], "urgency": "today"},
+                    {"category": "transport", "items": ["transport"], "urgency": "today"},
+                    {"category": "companionship", "items": ["companionship"], "urgency": "today"},
+                    {"category": "cleaning", "items": ["cleaning"], "urgency": "today"},
+                ],
+            },
+        )
+
+        self.assertEqual(len(result.needs), 1)
+        self.assertEqual(result.needs[0].category, NeedCategory.GROCERIES)
+        self.assertEqual(result.needs[0].items, ("1-litre bottle of milk",))
+        self.assertEqual(result.needs[0].urgency, Urgency.TOMORROW)
+
+    def test_summary_request_overrides_broader_structured_menu_examples(self):
+        result = extract_intake_result(
+            "r-1",
+            {
+                "status": "completed",
+                "summary": (
+                    "The caller requested groceries for tomorrow: "
+                    "one 1-litre bottle of milk."
+                ),
+                "needs": [
+                    {"category": "groceries", "items": ["milk"], "urgency": "tomorrow"},
+                    {"category": "transport", "items": ["transport"], "urgency": "tomorrow"},
+                    {"category": "companionship", "items": ["companionship"], "urgency": "tomorrow"},
+                    {"category": "cleaning", "items": ["cleaning"], "urgency": "tomorrow"},
+                    {"category": "documents", "items": ["documents help"], "urgency": "tomorrow"},
+                ],
+            },
+        )
+
+        self.assertFalse(result.human_review)
+        self.assertEqual(len(result.needs), 1)
+        self.assertEqual(result.needs[0].category, NeedCategory.GROCERIES)
+        self.assertEqual(result.needs[0].items, ("1-litre bottle of milk",))
+        self.assertEqual(result.needs[0].urgency, Urgency.TOMORROW)
+
+    def test_prohibited_goods_request_excludes_blocked_items_without_printable_needs(self):
+        result = extract_intake_result(
+            "r-1",
+            {
+                "status": "completed",
+                "summary": "The recipient asked for 10 cans of beer for tomorrow.",
+                "needs": [
+                    {"category": "groceries", "items": ["beer"], "urgency": "tomorrow"},
+                    {"category": "transport", "items": ["transport"], "urgency": "tomorrow"},
+                ],
+            },
+        )
+
+        self.assertTrue(result.human_review)
+        self.assertEqual(result.needs, ())
+        self.assertIn("prohibited", " ".join(result.review_reasons))
+        self.assertEqual(result.review_reason_codes, (ReviewReasonCode.PROHIBITED_REQUEST_EXCLUDED,))
+
+    def test_mixed_allowed_and_prohibited_request_keeps_allowed_items(self):
+        result = extract_intake_result(
+            "r-1",
+            {
+                "status": "completed",
+                "summary": "The recipient asked for bread and 10 cans of beer for tomorrow.",
+                "needs": [
+                    {"category": "groceries", "items": ["1 package of bread"], "urgency": "tomorrow"},
+                    {"category": "groceries", "items": ["10 cans of beer"], "urgency": "tomorrow"},
+                ],
+            },
+        )
+
+        self.assertTrue(result.human_review)
+        self.assertEqual(len(result.needs), 1)
+        self.assertEqual(result.needs[0].category, NeedCategory.GROCERIES)
+        self.assertEqual(result.needs[0].items, ("1 package of bread",))
+        self.assertIn("prohibited", " ".join(result.review_reasons))
+        self.assertEqual(result.review_reason_codes, (ReviewReasonCode.PROHIBITED_REQUEST_EXCLUDED,))
+
+    def test_structured_prohibited_goods_without_summary_creates_no_needs(self):
+        result = extract_intake_result(
+            "r-1",
+            {
+                "status": "completed",
+                "needs": [
+                    {
+                        "category": "groceries",
+                        "items": ["10 cans of beer"],
+                        "urgency": "tomorrow",
+                        "notes": "",
+                    }
+                ],
+            },
+        )
+
+        self.assertTrue(result.human_review)
+        self.assertEqual(result.needs, ())
+        self.assertIn("excluded from fulfilment", result.review_reasons[0])
+        self.assertEqual(result.review_reason_codes, (ReviewReasonCode.PROHIBITED_REQUEST_EXCLUDED,))
+
     def test_completed_summary_without_extractable_needs_routes_to_human_review(self):
         result = extract_intake_result(
             "r-1",
@@ -158,6 +286,7 @@ class ExtractionTest(unittest.TestCase):
         self.assertTrue(result.human_review)
         self.assertEqual(result.needs, ())
         self.assertIn("without structured practical needs", result.review_reasons[0])
+        self.assertEqual(result.review_reason_codes, (ReviewReasonCode.COMPLETED_WITHOUT_STRUCTURED_NEEDS,))
 
 
 if __name__ == "__main__":

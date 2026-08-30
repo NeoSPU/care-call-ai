@@ -49,6 +49,30 @@ class SafetyCategory(StrEnum):
     NON_CRITICAL = "non_critical"
 
 
+class ServiceRequestStatus(StrEnum):
+    READY_TO_PRINT = "ready_to_print"
+    REVIEW = "review"
+    PENDING = "pending"
+    VOID = "void"
+
+
+class CallbackRequestStatus(StrEnum):
+    AUTO_CALLBACK_REQUESTED = "auto_callback_requested"
+    AUTO_CALLBACK_STARTED = "auto_callback_started"
+    AUTO_CALLBACK_COMPLETED = "auto_callback_completed"
+    AUTO_CALLBACK_NO_CONTACT = "auto_callback_no_contact"
+    AUTO_CALLBACK_FAILED = "auto_callback_failed"
+    CALLBACK_LIMIT_REACHED = "callback_limit_reached"
+    OPERATOR_REVIEW = "operator_review"
+    APPROVED_CALLBACK = "approved_callback"
+    OPERATOR_CALL = "operator_call"
+    DISMISSED_DUPLICATE = "dismissed_duplicate"
+    RESOLVED = "resolved"
+
+
+OPERATOR_CREATED_CALLBACK_SOURCE = "operator_created"
+
+
 @dataclass(frozen=True)
 class Consent:
     status: ConsentStatus
@@ -230,6 +254,9 @@ class CallbackRequest:
     created_at: str
     updated_at: str
     resolution_note: str = ""
+    auto_run_id: str = ""
+    auto_call_status: str = ""
+    auto_call_error: str = ""
 
 
 @dataclass(frozen=True)
@@ -241,6 +268,15 @@ class DashboardState:
     intake_results: tuple[StoredIntakeResult, ...]
     service_requests: tuple[StoredServiceRequest, ...]
     callback_requests: tuple[CallbackRequest, ...] = field(default_factory=tuple)
+    call_runs: tuple[StoredCallRun, ...] = field(default_factory=tuple)
+
+
+def initial_callback_request_status(source: str, card: RecipientCard) -> CallbackRequestStatus:
+    if source.strip() == OPERATOR_CREATED_CALLBACK_SOURCE:
+        return CallbackRequestStatus.OPERATOR_REVIEW
+    if card.blocked or card.safety_category == SafetyCategory.CRITICAL or card.route != "recipient":
+        return CallbackRequestStatus.OPERATOR_REVIEW
+    return CallbackRequestStatus.AUTO_CALLBACK_REQUESTED
 
 
 @dataclass(frozen=True)

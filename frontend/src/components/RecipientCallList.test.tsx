@@ -175,6 +175,22 @@ describe("RecipientCallList", () => {
     expect(within(rowsAfter[1]).getByText("Avery Backend")).toBeTruthy();
   });
 
+  it("filters recipients by visible safety chips", () => {
+    render(<RecipientCallList recipients={recipients} selectedRecipientIds={["rec-api-001"]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Special" }));
+
+    expect(screen.getByText("Morgan Review")).toBeTruthy();
+    expect(screen.queryByText("Avery Backend")).toBeNull();
+    expect(screen.queryByText("Sam Manual")).toBeNull();
+    expect(screen.getByRole("button", { name: "Special" }).getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Non-critical" }));
+
+    expect(screen.getByText("Avery Backend")).toBeTruthy();
+    expect(screen.queryByText("Morgan Review")).toBeNull();
+  });
+
   it("shows empty state copy for empty backend recipient results", () => {
     render(<RecipientCallList recipients={[]} selectedRecipientIds={[]} />);
 

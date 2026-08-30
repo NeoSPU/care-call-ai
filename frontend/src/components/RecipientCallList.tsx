@@ -137,8 +137,13 @@ export function RecipientCallList({
 }: RecipientCallListProps) {
   const [sortMode, setSortMode] = useState<"criticality" | "name" | "area">("criticality");
   const [groupByArea, setGroupByArea] = useState(true);
+  const [showFilter, setShowFilter] = useState<SafetyCategory | "blocked" | "all">("all");
 
-  const sortedRecipients = useMemo(() => sortRecipients(recipients, sortMode), [recipients, sortMode]);
+  const filteredRecipients = useMemo(
+    () => recipients.filter((recipient) => showFilter === "all" || displaySafety(recipient) === showFilter),
+    [recipients, showFilter],
+  );
+  const sortedRecipients = useMemo(() => sortRecipients(filteredRecipients, sortMode), [filteredRecipients, sortMode]);
   const groups = useMemo(() => {
     if (!groupByArea) {
       return [{ title: "All delivery areas", recipients: sortedRecipients }];
@@ -228,11 +233,23 @@ export function RecipientCallList({
         <span className="tbSep" />
         <span className="tbLabel">Show</span>
         <div className="filters">
-          <button className="chip active" type="button">All</button>
-          <button className="chip" type="button">Critical</button>
-          <button className="chip" type="button">Special</button>
-          <button className="chip" type="button">Blocked</button>
-          <button className="chip" type="button">Non-critical</button>
+          {([
+            ["all", "All"],
+            ["critical", "Critical"],
+            ["special_handling", "Special"],
+            ["blocked", "Blocked"],
+            ["non_critical", "Non-critical"],
+          ] as const).map(([value, label]) => (
+            <button
+              aria-pressed={showFilter === value}
+              className={showFilter === value ? "chip active" : "chip"}
+              key={value}
+              onClick={() => setShowFilter(value)}
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
         </div>
         <label className="toggleControl compact">
             <input
@@ -251,6 +268,13 @@ export function RecipientCallList({
         <div className="emptyState">
           <h3>No recipients ready for this view</h3>
           <p>{EMPTY_SERVICE_DATA_HINT}</p>
+        </div>
+      )}
+
+      {recipients.length > 0 && sortedRecipients.length === 0 && (
+        <div className="emptyState">
+          <h3>No recipients match this filter</h3>
+          <p>Choose another safety filter or clear it with All.</p>
         </div>
       )}
 

@@ -14,6 +14,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from .agent_skills.practical_support import PRACTICAL_SUPPORT_SKILL
+
 
 CALLE_PROVIDER_ENV = "CARECALL_CALLE_PROVIDER"
 CALLE_API_KEY_ENV = "CARECALL_CALLE_API_KEY"
@@ -138,6 +140,7 @@ def build_call_body(args: dict[str, Any], settings: DeveloperApiSettings) -> dic
     task = str(args.get("goal", args.get("prompt", ""))).strip()
     language = str(args.get("language", "en")).strip() or "en"
     locale = _locale_for(language, settings.region)
+    task = _task_with_skill_contract(task)
     task = _task_with_phone(task, phone) if phone and not settings.include_recipients else task
     body = {
         "task": task,
@@ -168,6 +171,20 @@ def _task_with_phone(task: str, phone: str) -> str:
     if phone in normalized_task:
         return normalized_task
     return f"Call {phone}. {normalized_task}".strip()
+
+
+def _task_with_skill_contract(task: str) -> str:
+    normalized_task = task.strip()
+    if "Never order menu examples" in normalized_task:
+        return normalized_task
+    contract = (
+        "Structured output rule: "
+        f"{PRACTICAL_SUPPORT_SKILL.explicit_need_rules_text()} "
+        f"{PRACTICAL_SUPPORT_SKILL.quantity_capture_rules_text()}"
+    )
+    if contract in normalized_task:
+        return normalized_task
+    return f"{normalized_task} {contract}".strip()
 
 
 def _http_error_message(exc: urllib.error.HTTPError) -> str:
@@ -213,7 +230,13 @@ def _recipient_result_schema() -> dict[str, Any]:
                     "required": ["category", "items"],
                     "properties": {
                         "category": {"type": "string"},
-                        "items": {"type": "array", "items": {"type": "string"}},
+                        "items": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "description": "Explicitly requested item/service, preserving spoken quantities and spoken quantities.",
+                            },
+                        },
                         "urgency": {"type": "string"},
                         "notes": {"type": "string"},
                     },

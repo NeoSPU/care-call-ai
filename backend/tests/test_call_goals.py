@@ -44,6 +44,7 @@ class CallGoalTest(unittest.TestCase):
         goal = compile_call_goal(recipient())
         self.assertEqual(goal.route, "recipient")
         self.assertTrue(any("medical diagnosis" in item for item in goal.prohibited_topics))
+        self.assertTrue(any("age-restricted goods" in item for item in goal.prohibited_topics))
 
     def test_mild_dementia_uses_soft_check_in(self):
         goal = compile_call_goal(recipient(condition=Condition.ALZHEIMER, severity=Severity.MILD))

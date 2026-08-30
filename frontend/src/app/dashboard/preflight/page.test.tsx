@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import PreflightPage from "./page";
 import {
   approvePreflight,
+  cancelRun,
   createBatch,
-  getDashboardData,
   getPreflight,
   importRunResult,
   requestLiveExecution,
@@ -13,8 +13,8 @@ import {
 
 vi.mock("../../../lib/carecall-api", () => ({
   approvePreflight: vi.fn(),
+  cancelRun: vi.fn(),
   createBatch: vi.fn(),
-  getDashboardData: vi.fn(),
   getPreflight: vi.fn(),
   importRunResult: vi.fn(),
   requestLiveExecution: vi.fn(),
@@ -86,25 +86,6 @@ const severeManualPreview = {
   same_day_repeat_warning: "",
 };
 
-const dashboardDto = {
-  service: "carecall-backend",
-  summary: {
-    recipients: 3,
-    ready: 1,
-    blocked: 2,
-    service_requests: 0,
-    stale_approvals: 0,
-  },
-  recipients: [],
-  planned_calls: [readyPreview, unapprovedSpecialHandlingPreview, severeManualPreview],
-  call_status: {
-    preflight_plans: [{ id: "plan-api-001", batch_id: "batch-api-001" }],
-    approvals: [],
-    intake_results: [],
-  },
-  service_requests: [],
-};
-
 const preflightDto = {
   plan_id: "plan-api-001",
   batch_id: "batch-api-001",
@@ -116,7 +97,6 @@ const preflightDto = {
 };
 
 function mockPreflightLoad() {
-  vi.mocked(getDashboardData).mockResolvedValue(dashboardDto);
   vi.mocked(getPreflight).mockResolvedValue(preflightDto);
   vi.mocked(createBatch).mockResolvedValue({
     batch: {
@@ -195,11 +175,29 @@ function mockPreflightLoad() {
       },
     ],
   });
+  vi.mocked(cancelRun).mockResolvedValue({
+    canceled: true,
+    run: {
+      id: "run-api-live-001",
+      plan_id: "plan-api-001",
+      approval_id: "approval-api-001",
+      recipient_id: "rec-api-001",
+      idempotency_key: "backend-key-001",
+      status: "canceled",
+      mode: "live",
+      provider_plan_id: "provider-plan-001",
+      provider_run_id: "provider-run-001",
+      started_at: "",
+      completed_at: "",
+      error: "Operator stopped the active session.",
+      masked_phone: "+1******4401",
+    },
+  });
 }
 
 async function renderPreflight() {
   mockPreflightLoad();
-  render(await PreflightPage());
+  render(await PreflightPage({ searchParams: { batch_id: "batch-api-001" } }));
 }
 
 function completeLiveGate() {
@@ -230,7 +228,6 @@ describe("PreflightPage", () => {
   it("loads backend preflight state through the typed API client", async () => {
     await renderPreflight();
 
-    expect(getDashboardData).toHaveBeenCalled();
     expect(getPreflight).toHaveBeenCalledWith("batch-api-001");
     expect(screen.getByRole("link", { name: "Back to Operator panel" }).getAttribute("href")).toBe("/dashboard/operator");
     expect(screen.queryByText("APPROVE CARE CALL AI AUTO ROUND")).toBeNull();
@@ -260,6 +257,17 @@ describe("PreflightPage", () => {
     expect(getPreflight).toHaveBeenCalledWith("batch-selected-123");
   });
 
+  it("does not fall back to a stale preflight batch when no selection is supplied", async () => {
+    render(await PreflightPage());
+
+    expect(getPreflight).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Round preflight" })).toBeTruthy();
+    expect(screen.getByText("No planned calls selected")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open Operator Panel" }).getAttribute("href")).toBe(
+      "/dashboard/operator#call-list",
+    );
+  });
+
   it("lets the operator remove a ready recipient and rebuilds backend preflight", async () => {
     const twoReadyPreflight = {
       ...preflightDto,
@@ -274,7 +282,6 @@ describe("PreflightPage", () => {
       manual_previews: [],
       blocked_previews: [],
     };
-    vi.mocked(getDashboardData).mockResolvedValue(dashboardDto);
     vi.mocked(getPreflight).mockResolvedValueOnce(twoReadyPreflight).mockResolvedValueOnce(adjustedPreflight);
     vi.mocked(createBatch).mockResolvedValue({
       batch: {
@@ -285,7 +292,7 @@ describe("PreflightPage", () => {
       },
     });
 
-    render(await PreflightPage());
+    render(await PreflightPage({ searchParams: { batch_id: "batch-api-001" } }));
 
     fireEvent.click(screen.getByLabelText("Include Avery Backend in preflight"));
 
@@ -309,11 +316,10 @@ describe("PreflightPage", () => {
       ready_keys: ["backend-key-001", "backend-key-004"],
       ready_previews: [readyPreview, secondReadyPreview],
     };
-    vi.mocked(getDashboardData).mockResolvedValue(dashboardDto);
     vi.mocked(getPreflight).mockResolvedValue(twoReadyPreflight);
     vi.mocked(createBatch).mockRejectedValue(new Error("database connection refused"));
 
-    render(await PreflightPage());
+    render(await PreflightPage({ searchParams: { batch_id: "batch-api-001" } }));
 
     fireEvent.click(screen.getByLabelText("Include Avery Backend in preflight"));
 
@@ -385,7 +391,6 @@ describe("PreflightPage", () => {
   });
 
   it("keeps the approval gate closed when backend reports a keyset or live gate rejection", async () => {
-    vi.mocked(getDashboardData).mockResolvedValue(dashboardDto);
     vi.mocked(getPreflight).mockResolvedValue(preflightDto);
     vi.mocked(approvePreflight).mockResolvedValue({
       approved: false,
@@ -394,7 +399,7 @@ describe("PreflightPage", () => {
       approval: null,
     });
 
-    render(await PreflightPage());
+    render(await PreflightPage({ searchParams: { batch_id: "batch-api-001" } }));
 
     completeLiveGate();
     fireEvent.click(screen.getByRole("button", { name: "Start calls now" }));
@@ -417,10 +422,9 @@ describe("PreflightPage", () => {
       blocked_reasons: ["CALL-E readiness check failed."],
       records: [],
     });
-    vi.mocked(getDashboardData).mockResolvedValue(dashboardDto);
     vi.mocked(getPreflight).mockResolvedValue(preflightDto);
 
-    render(await PreflightPage());
+    render(await PreflightPage({ searchParams: { batch_id: "batch-api-001" } }));
 
     completeLiveGate();
     fireEvent.click(await screen.findByRole("button", { name: "Start calls now" }));
@@ -564,6 +568,12 @@ describe("PreflightPage", () => {
     expect(await screen.findByText(/You can safely close this window and keep working/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Close call progress" }));
     expect(screen.queryByRole("dialog", { name: "Call round progress" })).toBeNull();
+    expect(screen.getByText("Active call tracking")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "View progress" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "View progress" }));
+    expect(screen.getByRole("dialog", { name: "Call round progress" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close call progress" }));
 
     await waitFor(() => {
       expect(importRunResult).toHaveBeenCalledTimes(1);
@@ -572,7 +582,170 @@ describe("PreflightPage", () => {
     await waitFor(() => {
       expect(importRunResult).toHaveBeenCalledTimes(2);
     });
-    expect(screen.getByText("CALL-E result imported: 1 service request created.")).toBeTruthy();
+    expect(screen.getByText("CALL-E result imported: 1 printable order created.")).toBeTruthy();
+    expect(window.localStorage.getItem("carecall.activeLiveCallSession")).toBeNull();
+  });
+
+  it("shows deferred follow-up counters when CALL-E finishes without an answer", async () => {
+    await renderPreflight();
+    vi.mocked(requestLiveExecution).mockResolvedValue({
+      accepted: true,
+      mode: "live",
+      real_calls_placed: 1,
+      blocked_reasons: [],
+      records: [
+        {
+          id: "run-api-live-no-answer-001",
+          plan_id: "plan-api-001",
+          approval_id: "approval-api-001",
+          recipient_id: "rec-api-001",
+          idempotency_key: "backend-key-001",
+          status: "running",
+          mode: "live",
+          provider_plan_id: "provider-plan-001",
+          provider_run_id: "provider-run-001",
+          started_at: "",
+          completed_at: "",
+          error: "",
+          masked_phone: "+1******4401",
+        },
+      ],
+    });
+    vi.mocked(importRunResult).mockReset();
+    vi.mocked(importRunResult).mockResolvedValue({
+      imported: true,
+      provider_status: "no_answer",
+      run: {
+        id: "run-api-live-no-answer-001",
+        plan_id: "plan-api-001",
+        approval_id: "approval-api-001",
+        recipient_id: "rec-api-001",
+        idempotency_key: "backend-key-001",
+        status: "completed",
+        mode: "live",
+        provider_plan_id: "provider-plan-001",
+        provider_run_id: "provider-run-001",
+        started_at: "",
+        completed_at: "",
+        error: "",
+        masked_phone: "+1******4401",
+      },
+      intake_result: {
+        id: "intake-run-api-live-no-answer-001",
+        recipient_id: "rec-api-001",
+        status: "no_contact",
+        summary: "CALL-E ended with no_answer; route for human review.",
+        human_review: true,
+        needs: [],
+      },
+      service_requests: [
+        {
+          id: "svc-run-api-live-no-answer-001-1",
+          recipient_id: "rec-api-001",
+          recipient_name: "Avery Backend",
+          category: "other",
+          queue: "coordinator_review",
+          sla_hours: 8,
+          priority: "review",
+          status: "review",
+          items: [],
+          notes: "No answer.",
+          human_review_reason: "Call status requires human review: no_contact.",
+        },
+      ],
+    });
+
+    completeLiveGate();
+    fireEvent.click(await screen.findByRole("button", { name: "Start calls now" }));
+
+    await waitFor(() => {
+      expect(importRunResult).toHaveBeenCalledWith("run-api-live-no-answer-001");
+    });
+    expect((await screen.findAllByText(/CALL-E finished with no_answer/)).length).toBeGreaterThan(0);
+    const progressSummary = screen.getByLabelText("Call progress summary");
+    expect(within(progressSummary).getByText("Needs heard").nextSibling?.textContent).toBe("0");
+    expect(within(progressSummary).getByText("Follow-up").nextSibling?.textContent).toBe("1");
+    expect(within(progressSummary).getByText("Orders").nextSibling?.textContent).toBe("0");
+  });
+
+  it("lets the operator stop an active tracking session before importing orders", async () => {
+    await renderPreflight();
+    vi.mocked(requestLiveExecution).mockResolvedValue({
+      accepted: true,
+      mode: "live",
+      real_calls_placed: 1,
+      blocked_reasons: [],
+      records: [
+        {
+          id: "run-api-live-cancel-001",
+          plan_id: "plan-api-001",
+          approval_id: "approval-api-001",
+          recipient_id: "rec-api-001",
+          idempotency_key: "backend-key-001",
+          status: "running",
+          mode: "live",
+          provider_plan_id: "provider-plan-001",
+          provider_run_id: "provider-run-001",
+          started_at: "",
+          completed_at: "",
+          error: "",
+          masked_phone: "+1******4401",
+        },
+      ],
+    });
+    vi.mocked(importRunResult).mockResolvedValue({
+      imported: false,
+      provider_status: "in_progress",
+      run: {
+        id: "run-api-live-cancel-001",
+        plan_id: "plan-api-001",
+        approval_id: "approval-api-001",
+        recipient_id: "rec-api-001",
+        idempotency_key: "backend-key-001",
+        status: "running",
+        mode: "live",
+        provider_plan_id: "provider-plan-001",
+        provider_run_id: "provider-run-001",
+        started_at: "",
+        completed_at: "",
+        error: "",
+        masked_phone: "+1******4401",
+      },
+    });
+    vi.mocked(cancelRun).mockResolvedValue({
+      canceled: true,
+      run: {
+        id: "run-api-live-cancel-001",
+        plan_id: "plan-api-001",
+        approval_id: "approval-api-001",
+        recipient_id: "rec-api-001",
+        idempotency_key: "backend-key-001",
+        status: "canceled",
+        mode: "live",
+        provider_plan_id: "provider-plan-001",
+        provider_run_id: "provider-run-001",
+        started_at: "",
+        completed_at: "",
+        error: "Operator stopped the active session.",
+        masked_phone: "+1******4401",
+      },
+    });
+
+    completeLiveGate();
+    fireEvent.click(await screen.findByRole("button", { name: "Start calls now" }));
+    expect(await screen.findByRole("button", { name: "Stop tracking" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop tracking" }));
+
+    await waitFor(() => {
+      expect(cancelRun).toHaveBeenCalledWith(
+        "run-api-live-cancel-001",
+        "Operator stopped local CareCall tracking from the preflight progress window.",
+      );
+    });
+    expect(await screen.findByText("Session stopped")).toBeTruthy();
+    expect(screen.getAllByText(/will not import it or create orders/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/provider-side call may still continue/).length).toBeGreaterThan(0);
     expect(window.localStorage.getItem("carecall.activeLiveCallSession")).toBeNull();
   });
 
@@ -595,7 +768,6 @@ describe("PreflightPage", () => {
   });
 
   it("shows same-day repeat call warnings from backend preflight metadata", async () => {
-    vi.mocked(getDashboardData).mockResolvedValue(dashboardDto);
     vi.mocked(getPreflight).mockResolvedValue({
       ...preflightDto,
       ready_previews: [
@@ -609,13 +781,12 @@ describe("PreflightPage", () => {
       ],
     });
 
-    render(await PreflightPage());
+    render(await PreflightPage({ searchParams: { batch_id: "batch-api-001" } }));
 
     expect(screen.getByText(/already received one live call today/)).toBeTruthy();
   });
 
   it("requires repeat acknowledgement before starting a same-day repeat call", async () => {
-    vi.mocked(getDashboardData).mockResolvedValue(dashboardDto);
     vi.mocked(getPreflight).mockResolvedValue({
       ...preflightDto,
       ready_previews: [
@@ -629,7 +800,7 @@ describe("PreflightPage", () => {
       ],
     });
 
-    render(await PreflightPage());
+    render(await PreflightPage({ searchParams: { batch_id: "batch-api-001" } }));
 
     completeLiveGate();
     expect(screen.getByRole("button", { name: "Start calls now" }).hasAttribute("disabled")).toBe(true);

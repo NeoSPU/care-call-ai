@@ -11,6 +11,7 @@ from .intake_models import (
     IntakeStatus,
     NeedCategory,
     ReviewState,
+    ReviewReasonCode,
     Urgency,
 )
 
@@ -20,6 +21,7 @@ __all__ = (
     "IntakeStatus",
     "NeedCategory",
     "ReviewState",
+    "ReviewReasonCode",
     "Urgency",
     "extract_intake_result",
 )

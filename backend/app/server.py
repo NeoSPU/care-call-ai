@@ -9,10 +9,10 @@ from __future__ import annotations
 import json
 import os
 import sys
-from dataclasses import asdict, is_dataclass, replace
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Union
 from urllib.parse import urlparse
 
 from .api_models import (
@@ -29,9 +29,21 @@ from .api_models import (
     service_requests_payload,
 )
 from .approval import OperatorApproval, validate_operator_approval
+from .approval_policy import (
+    LIVE_AUTHORIZATION_PHRASE,
+    approval_execution_blockers,
+    all_confirmations,
+    repeat_call_blockers,
+)
 from .call_planning import build_call_plan_previews
-from .calle_execution import CallRunRecord, CallRunStatus, execute_approved_previews, fetch_call_result
+from .calle_execution import (
+    CallRunRecord,
+    CallRunStatus,
+    execute_approved_previews,
+)
 from .calle_readiness import CalleReadiness, check_calle_readiness
+from .callback_workflow import attempt_immediate_callback
+from .call_result_import import import_call_result, import_pending_callback_results
 from .domain import (
     AuthorizedContact,
     CallSuitability,
@@ -43,28 +55,13 @@ from .domain import (
     SafetyCategory,
     Severity,
 )
+from .http_routes import NestedResourceRoute, ResourceRoute
 from .repository import Repository, connect, init_schema, seed_database
 from .storage import DEFAULT_SEED_PATH, load_seed_recipients
 
 
 DEFAULT_DB_PATH = Path(os.environ.get("CARECALL_DB_PATH", "data/carecall.sqlite3"))
 BACKEND_API_CREDENTIAL_ENV = "CARECALL_BACKEND_API_TOKEN"
-REQUIRED_CONFIRMATIONS = ("active_consent", "care_route_match", "exact_keyset", "real_side_effects")
-REPEAT_CALL_CONFIRMATION = "same_day_repeat_acknowledged"
-LIVE_AUTHORIZATION_PHRASE = "EXECUTE LIVE CALLS"
-TERMINAL_PROVIDER_STATUSES = {
-    "busy",
-    "canceled",
-    "cancelled",
-    "completed",
-    "declined",
-    "expired",
-    "failed",
-    "no_answer",
-    "voicemail",
-}
-NO_CONTACT_PROVIDER_STATUSES = {"busy", "declined", "expired", "no_answer", "voicemail"}
-FAILED_PROVIDER_STATUSES = {"canceled", "cancelled", "failed"}
 
 
 def backend_api_credential(env: dict[str, str] | None = None) -> str:
@@ -172,10 +169,16 @@ def _apply_runtime_demo_overrides(repo: Repository, env: dict[str, str]) -> None
     )
 
 
-def dashboard_api_payload(db_path: str | Path = DEFAULT_DB_PATH, call_date: str = "2026-08-01") -> dict[str, Any]:
+def dashboard_api_payload(
+    db_path: str | Path = DEFAULT_DB_PATH,
+    call_date: str = "2026-08-01",
+    runner=None,
+) -> dict[str, Any]:
     conn = connect(db_path)
     try:
-        return dashboard_payload(Repository(conn).get_dashboard_state(call_date))
+        repo = Repository(conn)
+        _sync_pending_callback_results(repo, runner=runner)
+        return dashboard_payload(repo.get_dashboard_state(call_date))
     finally:
         conn.close()
 
@@ -339,9 +342,9 @@ def approve_preflight_api_payload(db_path: str | Path, payload: dict[str, Any]) 
         reasons = list(decision.reasons)
         if tuple(sorted(payload.get("approved_keys", ()))) != tuple(sorted(plan.ready_keys)):
             reasons.append("Approval must match the current exact ready keyset.")
-        if not _all_confirmations(payload.get("confirmations", {})):
+        if not all_confirmations(payload.get("confirmations", {})):
             reasons.append("All four confirmations are required.")
-        reasons.extend(_repeat_call_blockers(ready_previews, payload.get("confirmations", {})))
+        reasons.extend(repeat_call_blockers(ready_previews, payload.get("confirmations", {})))
         if str(payload.get("authorization_phrase", "")) != LIVE_AUTHORIZATION_PHRASE:
             reasons.append("Authorization phrase must equal EXECUTE LIVE CALLS.")
         if reasons:
@@ -367,7 +370,7 @@ def execute_dry_run_api_payload(db_path: str | Path, payload: dict[str, Any]) ->
         plan = repo.get_preflight_plan(str(payload.get("plan_id", "")))
         approval = repo.get_approval(str(payload.get("approval_id", "")))
         ready_previews, manual_previews, blocked_previews = _categorized_previews(repo, plan.batch_id)
-        blockers = _approval_execution_blockers(plan, approval, ready_previews, manual_previews, blocked_previews)
+        blockers = approval_execution_blockers(plan, approval, ready_previews, manual_previews, blocked_previews)
         if blockers:
             return execution_payload((), False, "dry_run", blockers)
         records = tuple(
@@ -399,15 +402,15 @@ def execute_live_api_payload(
         plan = repo.get_preflight_plan(str(payload.get("plan_id", "")))
         approval = repo.get_approval(str(payload.get("approval_id", "")))
         ready_previews, manual_previews, blocked_previews = _categorized_previews(repo, plan.batch_id)
-        blockers = list(_approval_execution_blockers(plan, approval, ready_previews, manual_previews, blocked_previews))
+        blockers = list(approval_execution_blockers(plan, approval, ready_previews, manual_previews, blocked_previews))
         submitted_keys = payload.get("approved_keys")
         if submitted_keys is not None and tuple(sorted(submitted_keys)) != tuple(sorted(plan.ready_keys)):
             blockers.append("Live execution requires the current exact keyset.")
         if env.get("CARECALL_LIVE_CALLS_ENABLED") != "true":
             blockers.append("Live calls are disabled unless CARECALL_LIVE_CALLS_ENABLED=true.")
-        if not _all_confirmations(payload.get("confirmations", {})):
+        if not all_confirmations(payload.get("confirmations", {})):
             blockers.append("All four confirmations are required for live execution.")
-        blockers.extend(_repeat_call_blockers(ready_previews, payload.get("confirmations", {})))
+        blockers.extend(repeat_call_blockers(ready_previews, payload.get("confirmations", {})))
         if str(payload.get("authorization_phrase", "")) != LIVE_AUTHORIZATION_PHRASE:
             blockers.append("Authorization phrase must equal EXECUTE LIVE CALLS.")
         max_batch_size = _max_live_batch_size(env)
@@ -460,6 +463,21 @@ def run_status_api_payload(db_path: str | Path, run_id: str) -> dict[str, Any]:
         conn.close()
 
 
+def cancel_run_api_payload(db_path: str | Path, run_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    conn = connect(db_path)
+    try:
+        reason = ""
+        if payload:
+            reason = str(payload.get("reason", ""))
+        run = Repository(conn).cancel_call_run(run_id, reason=reason)
+        return {
+            **run_status_payload(run),
+            "canceled": True,
+        }
+    finally:
+        conn.close()
+
+
 def run_result_api_payload(db_path: str | Path, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     conn = connect(db_path)
     try:
@@ -471,38 +489,7 @@ def run_result_api_payload(db_path: str | Path, run_id: str, payload: dict[str, 
 def import_run_result_api_payload(db_path: str | Path, run_id: str, runner=None) -> dict[str, Any]:
     conn = connect(db_path)
     try:
-        repo = Repository(conn)
-        run = repo.get_call_run(run_id)
-        if not run.provider_run_id:
-            raise ValueError("Stored run has no provider_run_id to import.")
-
-        provider_payload = fetch_call_result(run.provider_run_id) if runner is None else fetch_call_result(run.provider_run_id, runner)
-        provider_status = _provider_status(provider_payload)
-        if provider_status not in TERMINAL_PROVIDER_STATUSES:
-            _log_event(
-                "call_result_not_terminal",
-                run_id=run_id,
-                provider_run_id=run.provider_run_id,
-                provider_status=provider_status or "unknown",
-            )
-            return {
-                "imported": False,
-                "provider_status": provider_status or "unknown",
-                "run": run_status_payload(run)["run"],
-            }
-
-        bundle = repo.save_run_result_bundle(run_id, _normalized_provider_result(provider_payload, provider_status))
-        if provider_status in FAILED_PROVIDER_STATUSES:
-            _log_event(
-                "call_result_failed",
-                run_id=run_id,
-                provider_run_id=run.provider_run_id,
-                provider_status=provider_status,
-            )
-        payload = result_bundle_payload(bundle)
-        payload["imported"] = True
-        payload["provider_status"] = provider_status
-        return payload
+        return import_call_result(Repository(conn), run_id, runner=runner, log_event=_log_event)
     finally:
         conn.close()
 
@@ -515,28 +502,58 @@ def service_requests_api_payload(db_path: str | Path) -> dict[str, Any]:
         conn.close()
 
 
-def print_orders_api_payload(db_path: str | Path, env: dict[str, str] | None = None) -> dict[str, Any]:
+def print_orders_api_payload(db_path: str | Path, env: dict[str, str] | None = None, runner=None) -> dict[str, Any]:
     env = os.environ if env is None else env
     conn = connect(db_path)
     try:
-        return print_orders_payload(
-            Repository(conn).get_dashboard_state(),
-            include_demo_ready=env.get("CARECALL_DEMO_PRINT_ORDERS") == "true",
-        )
+        repo = Repository(conn)
+        _sync_pending_callback_results(repo, runner=runner)
+        if env.get("CARECALL_DEMO_PRINT_ORDERS") == "true":
+            return print_orders_payload(repo.get_dashboard_state(), include_demo_ready=True)
+        return service_requests_payload(repo.list_latest_call_result_service_requests())
     finally:
         conn.close()
 
 
-def callback_requests_api_payload(db_path: str | Path) -> dict[str, Any]:
+def callback_requests_api_payload(db_path: str | Path, runner=None) -> dict[str, Any]:
     conn = connect(db_path)
     try:
         repo = Repository(conn)
+        _sync_pending_callback_results(repo, runner=runner)
         return callback_requests_payload(repo.list_callback_requests(), repo.get_dashboard_state())
     finally:
         conn.close()
 
 
-def create_callback_request_api_payload(db_path: str | Path, payload: dict[str, Any]) -> dict[str, Any]:
+GET_DATABASE_PAYLOADS: dict[str, Callable[[str | Path], dict[str, Any]]] = {
+    "/api/callback-requests": callback_requests_api_payload,
+    "/api/dashboard": dashboard_api_payload,
+    "/api/operations/dashboard": operations_dashboard_api_payload,
+    "/api/orders/print": print_orders_api_payload,
+    "/api/service-requests": service_requests_api_payload,
+}
+
+
+def created_status(_: dict[str, Any]) -> int:
+    return 201
+
+
+def approved_status(payload: dict[str, Any]) -> int:
+    return 200 if payload["approved"] else 409
+
+
+def accepted_status(payload: dict[str, Any]) -> int:
+    return 200 if payload["accepted"] else 409
+
+
+def create_callback_request_api_payload(
+    db_path: str | Path,
+    payload: dict[str, Any],
+    env: dict[str, str] | None = None,
+    readiness: CalleReadiness | None = None,
+    runner=None,
+) -> dict[str, Any]:
+    env = os.environ if env is None else env
     conn = connect(db_path)
     try:
         repo = Repository(conn)
@@ -547,9 +564,59 @@ def create_callback_request_api_payload(db_path: str | Path, payload: dict[str, 
             priority=str(payload.get("priority", "urgent")),
             operator=str(payload.get("operator", "")),
         )
-        return callback_requests_payload((request,), repo.get_dashboard_state())
+        auto_callback = attempt_immediate_callback(repo, request, env, readiness, runner)
+        payload = callback_requests_payload((repo.get_callback_request(request.id),), repo.get_dashboard_state())
+        payload["auto_callback"] = auto_callback
+        return payload
     finally:
         conn.close()
+
+
+@dataclass(frozen=True)
+class PostRoute:
+    payload_factory: Callable[[Union[str, Path], dict[str, Any]], dict[str, Any]]
+    status_for: Callable[[dict[str, Any]], int]
+
+
+POST_DATABASE_PAYLOADS: dict[str, PostRoute] = {
+    "/api/approvals": PostRoute(approve_preflight_api_payload, approved_status),
+    "/api/batches": PostRoute(create_batch_api_payload, created_status),
+    "/api/callback-requests": PostRoute(create_callback_request_api_payload, created_status),
+    "/api/execution/dry-run": PostRoute(execute_dry_run_api_payload, accepted_status),
+    "/api/execution/live": PostRoute(execute_live_api_payload, accepted_status),
+    "/api/preflight": PostRoute(create_preflight_api_payload, created_status),
+}
+
+
+def import_run_result_post_payload(db_path: str | Path, run_id: str, _: dict[str, Any]) -> dict[str, Any]:
+    return import_run_result_api_payload(db_path, run_id)
+
+
+def cancel_run_post_payload(db_path: str | Path, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return cancel_run_api_payload(db_path, run_id, payload)
+
+
+def save_special_handling_post_payload(db_path: str | Path, recipient_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return save_special_handling_approval_api_payload(db_path, recipient_id, payload)
+
+
+def run_result_post_payload(db_path: str | Path, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return run_result_api_payload(db_path, run_id, payload)
+
+
+@dataclass(frozen=True)
+class DynamicPostRoute:
+    route: NestedResourceRoute
+    payload_factory: Callable[[Union[str, Path], str, dict[str, Any]], dict[str, Any]]
+    status_for: Callable[[dict[str, Any]], int]
+
+
+DYNAMIC_POST_DATABASE_PAYLOADS: tuple[DynamicPostRoute, ...] = (
+    DynamicPostRoute(NestedResourceRoute("/api/runs/", "/import"), import_run_result_post_payload, lambda _: 200),
+    DynamicPostRoute(NestedResourceRoute("/api/runs/", "/cancel"), cancel_run_post_payload, lambda _: 200),
+    DynamicPostRoute(NestedResourceRoute("/api/recipients/", "/special-handling-approval"), save_special_handling_post_payload, created_status),
+    DynamicPostRoute(NestedResourceRoute("/api/runs/", "/result"), run_result_post_payload, created_status),
+)
 
 
 def update_callback_request_api_payload(db_path: str | Path, callback_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -565,6 +632,105 @@ def update_callback_request_api_payload(db_path: str | Path, callback_id: str, p
         return callback_requests_payload((request,), repo.get_dashboard_state())
     finally:
         conn.close()
+
+
+def update_service_request_api_payload(db_path: str | Path, service_request_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    conn = connect(db_path)
+    try:
+        request = Repository(conn).update_service_request(
+            service_request_id,
+            category=str(payload.get("category", "")),
+            items=[str(item) for item in payload.get("items", []) if str(item).strip()],
+            notes=str(payload.get("notes", "")),
+            priority=str(payload.get("priority", "normal")),
+            status=str(payload.get("status", "review")),
+            operator=str(payload.get("operator", "carecall-coordinator")),
+            reason=str(payload.get("reason", "")),
+        )
+        return service_requests_payload((request,))
+    finally:
+        conn.close()
+
+
+def void_service_request_api_payload(db_path: str | Path, service_request_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    conn = connect(db_path)
+    try:
+        request = Repository(conn).void_service_request(
+            service_request_id,
+            operator=str(payload.get("operator", "carecall-coordinator")),
+            reason=str(payload.get("reason", "")),
+        )
+        return service_requests_payload((request,))
+    finally:
+        conn.close()
+
+
+def update_recipient_card_patch_payload(db_path: str | Path, recipient_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return update_recipient_card(db_path, recipient_id, payload)
+
+
+def update_recipient_safety_patch_payload(db_path: str | Path, recipient_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return update_recipient_safety(db_path, recipient_id, payload)
+
+
+def update_callback_request_patch_payload(db_path: str | Path, callback_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return update_callback_request_api_payload(db_path, callback_id, payload)
+
+
+def update_service_request_patch_payload(db_path: str | Path, service_request_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return update_service_request_api_payload(db_path, service_request_id, payload)
+
+
+def named_not_found(error: str) -> Callable[[Exception], tuple[dict[str, Any], int]]:
+    return lambda _: ({"error": error}, 404)
+
+
+def bad_request(exc: Exception) -> tuple[dict[str, Any], int]:
+    return {"error": "bad_request", "detail": str(exc)}, 400
+
+
+def raw_bad_request(exc: Exception) -> tuple[dict[str, Any], int]:
+    return {"error": str(exc)}, 400
+
+
+@dataclass(frozen=True)
+class ReadRoute:
+    route: ResourceRoute
+    payload_factory: Callable[[Union[str, Path], str], dict[str, Any]]
+    key_error: Callable[[Exception], tuple[dict[str, Any], int]]
+
+
+READ_DATABASE_PAYLOADS: tuple[ReadRoute, ...] = (
+    ReadRoute(ResourceRoute("/api/runs/"), run_status_api_payload, named_not_found("run_not_found")),
+    ReadRoute(ResourceRoute("/api/recipients/"), recipient_api_payload, named_not_found("recipient_not_found")),
+)
+
+
+@dataclass(frozen=True)
+class MutationRoute:
+    route: Union[ResourceRoute, NestedResourceRoute]
+    payload_factory: Callable[[Union[str, Path], str, dict[str, Any]], dict[str, Any]]
+    key_error: Callable[[Exception], tuple[dict[str, Any], int]]
+    value_error: Callable[[Exception], tuple[dict[str, Any], int]]
+
+
+PATCH_DATABASE_PAYLOADS: tuple[
+    MutationRoute,
+    ...,
+] = (
+    MutationRoute(NestedResourceRoute("/api/recipients/", "/card"), update_recipient_card_patch_payload, named_not_found("recipient_not_found"), bad_request),
+    MutationRoute(NestedResourceRoute("/api/recipients/", "/safety"), update_recipient_safety_patch_payload, raw_bad_request, raw_bad_request),
+    MutationRoute(ResourceRoute("/api/callback-requests/"), update_callback_request_patch_payload, named_not_found("callback_request_not_found"), bad_request),
+    MutationRoute(ResourceRoute("/api/service-requests/"), update_service_request_patch_payload, named_not_found("service_request_not_found"), bad_request),
+)
+
+
+DELETE_DATABASE_PAYLOADS: tuple[
+    MutationRoute,
+    ...,
+] = (
+    MutationRoute(ResourceRoute("/api/service-requests/"), void_service_request_api_payload, named_not_found("service_request_not_found"), bad_request),
+)
 
 
 class CareCallHandler(BaseHTTPRequestHandler):
@@ -584,41 +750,11 @@ class CareCallHandler(BaseHTTPRequestHandler):
         if path == "/preflight":
             self._send_json(preflight_payload())
             return
-        if path == "/api/dashboard":
-            initialize_database(DEFAULT_DB_PATH)
-            self._send_json(dashboard_api_payload(DEFAULT_DB_PATH))
+        payload_factory = GET_DATABASE_PAYLOADS.get(path)
+        if payload_factory:
+            self._send_initialized_json(payload_factory)
             return
-        if path == "/api/operations/dashboard":
-            initialize_database(DEFAULT_DB_PATH)
-            self._send_json(operations_dashboard_api_payload(DEFAULT_DB_PATH))
-            return
-        if path == "/api/callback-requests":
-            initialize_database(DEFAULT_DB_PATH)
-            self._send_json(callback_requests_api_payload(DEFAULT_DB_PATH))
-            return
-        if path == "/api/service-requests":
-            initialize_database(DEFAULT_DB_PATH)
-            self._send_json(service_requests_api_payload(DEFAULT_DB_PATH))
-            return
-        if path == "/api/orders/print":
-            initialize_database(DEFAULT_DB_PATH)
-            self._send_json(print_orders_api_payload(DEFAULT_DB_PATH))
-            return
-        if path.startswith("/api/runs/"):
-            initialize_database(DEFAULT_DB_PATH)
-            run_id = path.removeprefix("/api/runs/").strip("/")
-            try:
-                self._send_json(run_status_api_payload(DEFAULT_DB_PATH, run_id))
-            except KeyError:
-                self._send_json({"error": "run_not_found"}, status=404)
-            return
-        if path.startswith("/api/recipients/"):
-            initialize_database(DEFAULT_DB_PATH)
-            recipient_id = path.removeprefix("/api/recipients/")
-            try:
-                self._send_json(recipient_api_payload(DEFAULT_DB_PATH, recipient_id))
-            except KeyError:
-                self._send_json({"error": "recipient_not_found"}, status=404)
+        if self._send_read_route(path, READ_DATABASE_PAYLOADS):
             return
 
         self._send_json({"error": "not_found"}, status=404)
@@ -629,42 +765,17 @@ class CareCallHandler(BaseHTTPRequestHandler):
             return
         initialize_database(DEFAULT_DB_PATH)
         try:
-            if path == "/api/batches":
-                self._send_json(create_batch_api_payload(DEFAULT_DB_PATH, self._read_json()), status=201)
+            post_route = POST_DATABASE_PAYLOADS.get(path)
+            if post_route:
+                payload = post_route.payload_factory(DEFAULT_DB_PATH, self._read_json())
+                self._send_json(payload, status=post_route.status_for(payload))
                 return
-            if path == "/api/callback-requests":
-                self._send_json(create_callback_request_api_payload(DEFAULT_DB_PATH, self._read_json()), status=201)
-                return
-            if path == "/api/preflight":
-                self._send_json(create_preflight_api_payload(DEFAULT_DB_PATH, self._read_json()), status=201)
-                return
-            if path == "/api/approvals":
-                payload = approve_preflight_api_payload(DEFAULT_DB_PATH, self._read_json())
-                self._send_json(payload, status=200 if payload["approved"] else 409)
-                return
-            if path == "/api/execution/dry-run":
-                payload = execute_dry_run_api_payload(DEFAULT_DB_PATH, self._read_json())
-                self._send_json(payload, status=200 if payload["accepted"] else 409)
-                return
-            if path == "/api/execution/live":
-                payload = execute_live_api_payload(DEFAULT_DB_PATH, self._read_json())
-                self._send_json(payload, status=200 if payload["accepted"] else 409)
-                return
-            if path.startswith("/api/runs/") and path.endswith("/import"):
-                run_id = path.removeprefix("/api/runs/").removesuffix("/import").strip("/")
-                self._send_json(import_run_result_api_payload(DEFAULT_DB_PATH, run_id), status=200)
-                return
-            if path.startswith("/api/recipients/") and path.endswith("/special-handling-approval"):
-                recipient_id = path.removeprefix("/api/recipients/").removesuffix("/special-handling-approval").strip("/")
-                self._send_json(
-                    save_special_handling_approval_api_payload(DEFAULT_DB_PATH, recipient_id, self._read_json()),
-                    status=201,
-                )
-                return
-            if path.startswith("/api/runs/") and path.endswith("/result"):
-                run_id = path.removeprefix("/api/runs/").removesuffix("/result").strip("/")
-                self._send_json(run_result_api_payload(DEFAULT_DB_PATH, run_id, self._read_json()), status=201)
-                return
+            for route in DYNAMIC_POST_DATABASE_PAYLOADS:
+                resource = route.route.match(path)
+                if resource:
+                    payload = route.payload_factory(DEFAULT_DB_PATH, resource, self._read_json())
+                    self._send_json(payload, status=route.status_for(payload))
+                    return
         except KeyError as exc:
             self._send_json({"error": "not_found", "detail": str(exc)}, status=404)
             return
@@ -677,35 +788,50 @@ class CareCallHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if not self._authorized(path):
             return
-        if path.startswith("/api/recipients/") and path.endswith("/card"):
-            initialize_database(DEFAULT_DB_PATH)
-            recipient_id = path.removeprefix("/api/recipients/").removesuffix("/card").strip("/")
-            try:
-                self._send_json(update_recipient_card(DEFAULT_DB_PATH, recipient_id, self._read_json()))
-            except KeyError:
-                self._send_json({"error": "recipient_not_found"}, status=404)
-            except ValueError as exc:
-                self._send_json({"error": "bad_request", "detail": str(exc)}, status=400)
-            return
-        if path.startswith("/api/recipients/") and path.endswith("/safety"):
-            initialize_database(DEFAULT_DB_PATH)
-            recipient_id = path.removeprefix("/api/recipients/").removesuffix("/safety").strip("/")
-            try:
-                self._send_json(update_recipient_safety(DEFAULT_DB_PATH, recipient_id, self._read_json()))
-            except (KeyError, ValueError) as exc:
-                self._send_json({"error": str(exc)}, status=400)
-            return
-        if path.startswith("/api/callback-requests/"):
-            initialize_database(DEFAULT_DB_PATH)
-            callback_id = path.removeprefix("/api/callback-requests/").strip("/")
-            try:
-                self._send_json(update_callback_request_api_payload(DEFAULT_DB_PATH, callback_id, self._read_json()))
-            except KeyError:
-                self._send_json({"error": "callback_request_not_found"}, status=404)
-            except ValueError as exc:
-                self._send_json({"error": "bad_request", "detail": str(exc)}, status=400)
+        if self._send_mutation_route(path, PATCH_DATABASE_PAYLOADS):
             return
         self._send_json({"error": "not_found"}, status=404)
+
+    def do_DELETE(self) -> None:
+        path = urlparse(self.path).path
+        if not self._authorized(path):
+            return
+        if self._send_mutation_route(path, DELETE_DATABASE_PAYLOADS):
+            return
+        self._send_json({"error": "not_found"}, status=404)
+
+    def _send_mutation_route(self, path: str, routes: tuple[MutationRoute, ...]) -> bool:
+        for route in routes:
+            resource = route.route.match(path)
+            if not resource:
+                continue
+
+            try:
+                initialize_database(DEFAULT_DB_PATH)
+                self._send_json(route.payload_factory(DEFAULT_DB_PATH, resource, self._read_json()))
+            except KeyError as exc:
+                payload, status = route.key_error(exc)
+                self._send_json(payload, status=status)
+            except ValueError as exc:
+                payload, status = route.value_error(exc)
+                self._send_json(payload, status=status)
+            return True
+        return False
+
+    def _send_read_route(self, path: str, routes: tuple[ReadRoute, ...]) -> bool:
+        for route in routes:
+            resource = route.route.match(path)
+            if not resource:
+                continue
+
+            try:
+                initialize_database(DEFAULT_DB_PATH)
+                self._send_json(route.payload_factory(DEFAULT_DB_PATH, resource))
+            except KeyError as exc:
+                payload, status = route.key_error(exc)
+                self._send_json(payload, status=status)
+            return True
+        return False
 
     def log_message(self, format: str, *args: Any) -> None:
         return
@@ -726,13 +852,21 @@ class CareCallHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_initialized_json(
+        self,
+        payload_factory: Callable[[str | Path], dict[str, Any]],
+        status: int = 200,
+    ) -> None:
+        initialize_database(DEFAULT_DB_PATH)
+        self._send_json(payload_factory(DEFAULT_DB_PATH), status=status)
+
     def _send_cors_headers(self) -> None:
         origin = self.headers.get("Origin")
         allowed_origins = {"http://127.0.0.1:3001", "http://localhost:3001"}
         if origin in allowed_origins:
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
 
     def _authorized(self, path: str) -> bool:
@@ -783,65 +917,6 @@ def _categorized_previews(repo: Repository, batch_id: str):
     return tuple(ready), tuple(manual), tuple(blocked)
 
 
-def _approval_execution_blockers(
-    plan,
-    approval,
-    ready_previews,
-    manual_previews,
-    blocked_previews,
-) -> tuple[str, ...]:
-    reasons: list[str] = []
-    if approval.stale:
-        reasons.append("Approval is stale and must be regenerated from the current preflight.")
-    if approval.plan_id != plan.id:
-        reasons.append("Approval does not belong to the requested plan.")
-    if tuple(sorted(plan.ready_keys)) != tuple(sorted(preview.idempotency_key for preview in ready_previews)):
-        reasons.append("Current preflight ready keyset has changed.")
-    if tuple(sorted(approval.approved_keys)) != tuple(sorted(plan.ready_keys)):
-        reasons.append("Approval does not match the current exact ready keyset.")
-    decision = validate_operator_approval(
-        ready_previews + manual_previews + blocked_previews,
-        OperatorApproval(
-            approved_keys=approval.approved_keys,
-            approver=approval.operator,
-            approved_at=approval.approved_at,
-            note=approval.note,
-        ),
-    )
-    if not decision.approved:
-        reasons.extend(decision.reasons)
-    if not ready_previews:
-        reasons.append("No ready call plans are available for execution.")
-    return tuple(reasons)
-
-
-def _all_confirmations(confirmations: dict) -> bool:
-    return all(confirmations.get(name) is True for name in REQUIRED_CONFIRMATIONS)
-
-
-def _repeat_call_blockers(ready_previews, confirmations: dict) -> tuple[str, ...]:
-    repeat_previews = [preview for preview in ready_previews if preview.same_day_call_count > 0]
-    if not repeat_previews:
-        return ()
-
-    reasons: list[str] = []
-    limit_reached = [preview.recipient_label for preview in repeat_previews if preview.operator_repeat_limit_reached]
-    if limit_reached:
-        reasons.append(
-            "Operator-initiated same-day repeat call limit has been reached for: "
-            + ", ".join(limit_reached)
-            + "."
-        )
-
-    acknowledgement_missing = any(preview.operator_repeat_available for preview in repeat_previews) and confirmations.get(
-        REPEAT_CALL_CONFIRMATION
-    ) is not True
-    if acknowledgement_missing:
-        reasons.append("Same-day repeat call acknowledgement is required.")
-
-    return tuple(reasons)
-
-
 def _max_live_batch_size(env: dict[str, str]) -> int:
     try:
         return int(env.get("CARECALL_MAX_LIVE_BATCH_SIZE", "1"))
@@ -849,61 +924,15 @@ def _max_live_batch_size(env: dict[str, str]) -> int:
         return 1
 
 
+def _sync_pending_callback_results(repo: Repository, runner=None) -> None:
+    import_pending_callback_results(repo, runner=runner, log_event=_log_event)
+
+
 def _log_event(event: str, **fields: Any) -> None:
     try:
         print(json.dumps({"event": event, **fields}, ensure_ascii=False), file=sys.stderr, flush=True)
     except Exception:
         print(f'{{"event":"{event}","logging_error":true}}', file=sys.stderr, flush=True)
-
-
-def _provider_status(payload: dict[str, Any]) -> str:
-    return str(payload.get("status", payload.get("state", ""))).strip().lower()
-
-
-def _normalized_provider_result(payload: dict[str, Any], provider_status: str) -> dict[str, Any]:
-    normalized = _provider_structured_result(payload)
-    if provider_status in NO_CONTACT_PROVIDER_STATUSES:
-        normalized["status"] = "no_contact"
-        normalized.setdefault("summary", f"CALL-E ended with {provider_status}; route for human review.")
-        normalized["human_review"] = True
-        normalized.setdefault("needs", [])
-    elif provider_status in FAILED_PROVIDER_STATUSES:
-        normalized["status"] = "malformed"
-        normalized.setdefault("summary", f"CALL-E ended with {provider_status}; route for technical/human review.")
-        normalized["human_review"] = True
-        normalized.setdefault("needs", [])
-    else:
-        normalized["status"] = "completed"
-        normalized.setdefault("needs", [])
-    return normalized
-
-
-def _provider_structured_result(payload: dict[str, Any]) -> dict[str, Any]:
-    candidates: list[Any] = [
-        payload.get("structured_result"),
-        payload.get("result"),
-        payload.get("recipient_result"),
-    ]
-    for key in ("recipient_results", "recipients"):
-        raw_items = payload.get(key)
-        if isinstance(raw_items, list):
-            for item in raw_items:
-                if isinstance(item, dict):
-                    candidates.extend(
-                        [
-                            item.get("structured_result"),
-                            item.get("result"),
-                            item.get("recipient_result"),
-                        ]
-                    )
-    for candidate in candidates:
-        if isinstance(candidate, dict):
-            normalized = dict(candidate)
-            for field in ("summary", "needs", "human_review"):
-                if field in payload and field not in normalized:
-                    normalized[field] = payload[field]
-            return normalized
-    return dict(payload)
 
 
 if __name__ == "__main__":

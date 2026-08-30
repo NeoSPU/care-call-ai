@@ -2,12 +2,16 @@ import unittest
 
 from app.domain import (
     CallSuitability,
+    CallbackRequestStatus,
     CareProfile,
     Condition,
     Consent,
     ConsentStatus,
     Recipient,
+    RecipientCard,
+    SafetyCategory,
     Severity,
+    initial_callback_request_status,
 )
 from app.validation import is_e164, validate_recipient
 
@@ -31,6 +35,20 @@ def recipient(**overrides):
     }
     data.update(overrides)
     return Recipient(**data)
+
+
+def recipient_card(**overrides):
+    data = {
+        "id": "rec-1",
+        "display_name": "Test Recipient",
+        "masked_phone": "+1******1234",
+        "safety_category": SafetyCategory.NON_CRITICAL,
+        "blocked": False,
+        "blocked_reasons": (),
+        "route": "recipient",
+    }
+    data.update(overrides)
+    return RecipientCard(**data)
 
 
 class DomainValidationTest(unittest.TestCase):
@@ -80,6 +98,28 @@ class DomainValidationTest(unittest.TestCase):
             )
         )
         self.assertTrue(any(issue.field == "caregiver_phone_e164" for issue in issues))
+
+    def test_initial_callback_request_status_keeps_risky_callbacks_in_operator_review(self):
+        safe_card = recipient_card()
+        critical_card = recipient_card(safety_category=SafetyCategory.CRITICAL)
+        staff_route_card = recipient_card(route="staff")
+
+        self.assertEqual(
+            initial_callback_request_status("siri_shortcut", safe_card),
+            CallbackRequestStatus.AUTO_CALLBACK_REQUESTED,
+        )
+        self.assertEqual(
+            initial_callback_request_status("operator_created", safe_card),
+            CallbackRequestStatus.OPERATOR_REVIEW,
+        )
+        self.assertEqual(
+            initial_callback_request_status("siri_shortcut", critical_card),
+            CallbackRequestStatus.OPERATOR_REVIEW,
+        )
+        self.assertEqual(
+            initial_callback_request_status("siri_shortcut", staff_route_card),
+            CallbackRequestStatus.OPERATOR_REVIEW,
+        )
 
 
 if __name__ == "__main__":

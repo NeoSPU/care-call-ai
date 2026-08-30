@@ -6,9 +6,14 @@ export const metadata: Metadata = {
   title: "Care Call AI - Daily Round Control",
   description: "Condition-aware CALL-E care intake dashboard",
   icons: {
-    icon: "/carecall-logo.svg",
-    shortcut: "/carecall-logo.svg",
-    apple: "/carecall-logo.svg",
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/favicon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: "/icon.svg",
+    apple: "/apple-icon.png",
   },
 };
 
@@ -18,8 +23,22 @@ export default function RootLayout({
   children: ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+try {
+  var theme = localStorage.getItem("carecall:theme");
+  if (theme !== "light" && theme !== "dark") {
+    theme = "light";
+  }
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+} catch (_) {}
+            `.trim(),
+          }}
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link

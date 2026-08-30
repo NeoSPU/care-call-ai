@@ -29,7 +29,9 @@ class DeveloperApiRunnerTests(unittest.TestCase):
             requests.append(request)
             self.assertEqual(timeout, 45)
             body = json.loads(request.data.decode("utf-8"))
-            self.assertEqual(body["task"], "Call +447700900123. Ask Alex what groceries are needed tomorrow.")
+            self.assertTrue(body["task"].startswith("Call +447700900123. Ask Alex what groceries are needed tomorrow."))
+            self.assertIn("Never order menu examples", body["task"])
+            self.assertIn("1-litre bottle of milk", body["task"])
             self.assertNotIn("recipients", body)
             self.assertNotIn("result_schema", body)
             self.assertNotIn("recipient_result_schema", body)
@@ -107,7 +109,8 @@ class DeveloperApiRunnerTests(unittest.TestCase):
 
         body = json.loads(requests[0].data.decode("utf-8"))
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(body["task"], "Ask Alex what groceries are needed tomorrow.")
+        self.assertTrue(body["task"].startswith("Ask Alex what groceries are needed tomorrow."))
+        self.assertIn("Never order menu examples", body["task"])
         self.assertEqual(body["recipients"][0]["phones"], ["+447700900123"])
         self.assertEqual(body["recipients"][0]["region"], "GB")
         self.assertEqual(body["recipients"][0]["locale"], "en-GB")
@@ -135,6 +138,8 @@ class DeveloperApiRunnerTests(unittest.TestCase):
         self.assertIn("result_schema", body)
         self.assertIn("recipient_result_schema", body)
         self.assertNotIn("summary", body["recipient_result_schema"]["properties"])
+        item_schema = body["recipient_result_schema"]["properties"]["needs"]["items"]["properties"]["items"]["items"]
+        self.assertIn("preserving spoken quantities", item_schema["description"])
 
     def test_get_call_result_reads_call_status(self):
         requests = []

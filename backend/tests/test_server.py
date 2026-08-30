@@ -168,8 +168,8 @@ class ServerApiPayloadTests(unittest.TestCase):
         default_payload = print_orders_api_payload(self.db_path, env={})
         demo_payload = print_orders_api_payload(self.db_path, env={"CARECALL_DEMO_PRINT_ORDERS": "true"})
 
-        self.assertGreaterEqual(len(default_payload["service_requests"]), 1)
-        self.assertTrue(all(item["status"] != "ready_to_print" for item in default_payload["service_requests"]))
+        self.assertEqual(default_payload["service_requests"], [])
+        self.assertGreaterEqual(len(demo_payload["service_requests"]), 1)
         self.assertTrue(all(item["status"] == "ready_to_print" for item in demo_payload["service_requests"]))
 
     def test_demo_reset_recreates_clean_seed_state(self):
@@ -219,7 +219,7 @@ class ServerCorsTests(unittest.TestCase):
 
         self.assertEqual(handler.status, 204)
         self.assertIn(("Access-Control-Allow-Origin", "http://127.0.0.1:3001"), handler.sent_headers)
-        self.assertIn(("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS"), handler.sent_headers)
+        self.assertIn(("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS"), handler.sent_headers)
         self.assertIn(("Access-Control-Allow-Headers", "Authorization, Content-Type"), handler.sent_headers)
 
 

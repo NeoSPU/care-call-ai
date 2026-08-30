@@ -2,6 +2,7 @@ import { PrintableOrderSheet } from "../../../../components/PrintableOrderSheet"
 import { getDashboardData, getPrintOrders } from "../../../../lib/carecall-api";
 import { getCurrentOperatorName } from "../../../../lib/current-operator";
 import type { PrintOrderDto } from "../../../../lib/types";
+import { urgentCallbackOpenCount } from "../../../../lib/urgent-callback-events";
 
 function enrichOrders(
   orders: Awaited<ReturnType<typeof getPrintOrders>>,
@@ -31,7 +32,7 @@ export default async function PrintOrdersPage() {
       getDashboardData(),
       getCurrentOperatorName(),
     ]);
-    const urgentCallbackCount = (dashboard.callback_requests ?? []).filter((request) => request.status === "new").length;
+    const urgentCallbackCount = urgentCallbackOpenCount(dashboard.callback_requests ?? []);
     return (
       <PrintableOrderSheet
         operatorName={operatorName}

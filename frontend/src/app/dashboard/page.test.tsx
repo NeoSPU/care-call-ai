@@ -195,8 +195,13 @@ describe("DashboardPage", () => {
     expect(screen.getByText("Registered")).toBeTruthy();
     expect(screen.getByText("Ready auto-call")).toBeTruthy();
     expect(screen.getAllByText("Urgent callbacks").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: "Safety Categories" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Condition Mix" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Care seen visual overview" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Readiness ring: 1 of 4 recipients ready for auto-call" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Safety categories distribution" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Condition mix bar chart" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Service demand bar chart" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Safety Categories" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Condition Mix" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Recipient call list" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Review selected round" })).toBeNull();
     expect(screen.getByRole("link", { name: /Operator Panel/ }).getAttribute("href")).toBe("/dashboard/operator");
@@ -226,7 +231,7 @@ describe("DashboardPage", () => {
     expect(screen.getByText("Food")).toBeTruthy();
     expect(screen.getByText("Medicine")).toBeTruthy();
     expect(screen.getAllByText("4").length).toBeGreaterThan(0);
-    expect(screen.getByText("backend-key-001")).toBeTruthy();
+    expect(screen.queryByText("backend-key-001")).toBeNull();
     expect(screen.getAllByRole("button", { name: "Review selected round" })[0]).toBeTruthy();
   });
 
@@ -312,7 +317,7 @@ describe("DashboardPage", () => {
     expect(includeSam.disabled).toBe(false);
     expect(includeSam.checked).toBe(true);
     expect(screen.getAllByText("Auto-call").length).toBeGreaterThan(1);
-    expect(screen.getByText("backend-key-003")).toBeTruthy();
+    expect(screen.queryByText("backend-key-003")).toBeNull();
   });
 
   it("sends only the persisted operator selection when opening preflight", async () => {

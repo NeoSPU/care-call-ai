@@ -34,6 +34,9 @@ export type PlannedCallDto = {
   operator_repeat_available?: boolean;
   operator_repeat_limit_reached?: boolean;
   same_day_repeat_warning?: string;
+  same_day_callback_count?: number;
+  callback_repeat_review_required?: boolean;
+  callback_repeat_warning?: string;
 };
 
 export type PreflightPlanDto = {
@@ -92,6 +95,8 @@ export type ServiceRequestDto = {
   updated_at?: string;
   update_count?: number;
   update_history?: Array<Record<string, unknown>>;
+  suggested_category?: string;
+  suggested_items?: string[];
 };
 
 export type CallbackRequestDto = {
@@ -104,13 +109,24 @@ export type CallbackRequestDto = {
   priority: string;
   operator: string;
   created_at: string;
+  requested_at?: string;
   updated_at: string;
   resolution_note: string;
+  auto_run_id?: string;
+  auto_call_status?: string;
+  auto_call_error?: string;
+  call_started_at?: string;
+  call_completed_at?: string;
+  provider_run_id?: string;
+  provider_status?: string;
   safety_category: SafetyCategory | string;
   condition: string;
   masked_phone: string;
   delivery_area: string;
   blocked: boolean;
+  same_day_callback_count?: number;
+  callback_repeat_review_required?: boolean;
+  callback_repeat_warning?: string;
 };
 
 export type DashboardPayload = {
@@ -328,6 +344,10 @@ export type RunRecordDto = {
 
 export type RunStatusPayload = {
   run: RunRecordDto;
+};
+
+export type CancelRunPayload = RunStatusPayload & {
+  canceled: true;
 };
 
 export type RunResultsPayload = {

@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
-import { updateCallbackRequest } from "../../../lib/carecall-api";
+import { createBatch, getCallbackRequests, importRunResult, updateCallbackRequest } from "../../../lib/carecall-api";
+import { storeRoundSelection } from "../../../lib/round-selection";
 import type { CallbackRequestDto, CallbackRequestsPayload } from "../../../lib/types";
+import { notifyUrgentCallbackCount, urgentCallbackOpenCount } from "../../../lib/urgent-callback-events";
 
 type UrgentCallbackClientProps = {
   data: CallbackRequestsPayload;
@@ -17,23 +19,91 @@ function sourceLabel(source: string) {
 }
 
 function statusClass(status: string) {
-  if (status === "new") {
+  if (status === "new" || status === "auto_callback_requested") {
     return "status urgent";
   }
-  if (status === "callback_approved") {
+  if (isApprovedStatus(status) || status === "auto_callback_started") {
     return "status ready";
   }
   if (status === "resolved") {
     return "status ok";
   }
+  if (status === "auto_callback_completed") {
+    return "status ok";
+  }
+  if (status === "callback_limit_reached" || status === "auto_callback_failed") {
+    return "status blocked";
+  }
+  if (status === "auto_callback_no_contact") {
+    return "status review";
+  }
   return "status review";
 }
 
 function matchingStatus(request: CallbackRequestDto, filter: QueueFilter) {
+  const status = callbackDisplayStatus(request);
   if (filter === "all") {
-    return request.status !== "resolved";
+    return status !== "resolved";
   }
-  return request.status === filter;
+  if (filter === "callback_approved") {
+    return isApprovedStatus(status) || status === "auto_callback_started";
+  }
+  if (filter === "new") {
+    return status === "new" || status === "auto_callback_requested";
+  }
+  if (filter === "operator_review") {
+    return ["operator_review", "callback_limit_reached", "auto_callback_failed"].includes(status);
+  }
+  return status === filter;
+}
+
+function isApprovedStatus(status: string) {
+  return status === "approved_callback" || status === "callback_approved";
+}
+
+function terminalCallbackStatus(status: string) {
+  return ["resolved", "auto_callback_completed", "auto_callback_no_contact"].includes(status);
+}
+
+function callbackDisplayStatus(request: CallbackRequestDto) {
+  if (request.auto_run_id && !terminalCallbackStatus(request.status)) {
+    return request.auto_call_status || "auto_callback_started";
+  }
+  return request.status;
+}
+
+function callbackSummary(requests: CallbackRequestDto[]): CallbackRequestsPayload["summary"] {
+  return {
+    new: requests.filter((request) => ["new", "auto_callback_requested"].includes(callbackDisplayStatus(request))).length,
+    in_review: requests.filter((request) =>
+      ["operator_review", "callback_limit_reached", "auto_callback_failed"].includes(callbackDisplayStatus(request)),
+    ).length,
+    callback_approved: requests.filter((request) => {
+      const status = callbackDisplayStatus(request);
+      return isApprovedStatus(status) || status === "auto_callback_started";
+    }).length,
+    resolved: requests.filter((request) => terminalCallbackStatus(callbackDisplayStatus(request))).length,
+  };
+}
+
+function activeAutoRunIds(requests: CallbackRequestDto[]) {
+  return requests
+    .filter((request) => request.auto_run_id && !terminalCallbackStatus(callbackDisplayStatus(request)))
+    .map((request) => request.auto_run_id as string);
+}
+
+function compactTime(value?: string) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value.includes("T") ? value : value.replace(" ", "T") + "Z");
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 export function UrgentCallbackClient({ data, operatorName }: UrgentCallbackClientProps) {
@@ -42,17 +112,64 @@ export function UrgentCallbackClient({ data, operatorName }: UrgentCallbackClien
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
 
+  const summary = useMemo(() => callbackSummary(requests), [requests]);
   const visibleRequests = useMemo(
     () => requests.filter((request) => matchingStatus(request, filter)),
     [filter, requests],
   );
 
-  const openCount = requests.filter((request) => request.status !== "resolved").length;
+  const openCount = urgentCallbackOpenCount(requests);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshQueue() {
+      try {
+        const payload = await getCallbackRequests();
+        if (!cancelled) {
+          setRequests(payload.callback_requests);
+          notifyUrgentCallbackCount(urgentCallbackOpenCount(payload.callback_requests));
+        }
+        const runIds = activeAutoRunIds(payload.callback_requests);
+        if (runIds.length > 0) {
+          const imports = await Promise.allSettled(runIds.map((runId) => importRunResult(runId)));
+          if (!cancelled && imports.some((result) => result.status === "fulfilled" && result.value.imported)) {
+            const refreshed = await getCallbackRequests();
+            if (!cancelled) {
+              setRequests(refreshed.callback_requests);
+              notifyUrgentCallbackCount(urgentCallbackOpenCount(refreshed.callback_requests));
+            }
+          }
+        }
+      } catch {
+        // Keep the current queue visible; operator-facing errors appear on explicit actions.
+      }
+    }
+
+    const refreshOnVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void refreshQueue();
+      }
+    };
+
+    const interval = window.setInterval(refreshQueue, 10_000);
+    window.addEventListener("focus", refreshQueue);
+    document.addEventListener("visibilitychange", refreshOnVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshQueue);
+      document.removeEventListener("visibilitychange", refreshOnVisibility);
+    };
+  }, []);
 
   function updateLocalRequest(callbackId: string, patch: Partial<CallbackRequestDto>) {
-    setRequests((current) =>
-      current.map((request) => (request.id === callbackId ? { ...request, ...patch } : request)),
-    );
+    setRequests((current) => {
+      const next = current.map((request) => (request.id === callbackId ? { ...request, ...patch } : request));
+      notifyUrgentCallbackCount(urgentCallbackOpenCount(next));
+      return next;
+    });
   }
 
   function changeStatus(callbackId: string, status: string, resolutionNote = "") {
@@ -72,6 +189,24 @@ export function UrgentCallbackClient({ data, operatorName }: UrgentCallbackClien
         }
       } catch {
         setRequests(previousRequests);
+        notifyUrgentCallbackCount(urgentCallbackOpenCount(previousRequests));
+        setMessage("The service could not complete this action. Please contact support if the problem continues.");
+      }
+    });
+  }
+
+  function prepareCallbackCall(request: CallbackRequestDto) {
+    setMessage("");
+    startTransition(async () => {
+      try {
+        const payload = await createBatch({
+          selected_recipient_ids: [request.recipient_id],
+          label: `Urgent callback for ${request.recipient_name}`,
+          call_date: new Date().toISOString().slice(0, 10),
+        });
+        storeRoundSelection([request.recipient_id]);
+        window.location.href = `/dashboard/preflight?batch_id=${encodeURIComponent(payload.batch.id)}`;
+      } catch {
         setMessage("The service could not complete this action. Please contact support if the problem continues.");
       }
     });
@@ -89,11 +224,34 @@ export function UrgentCallbackClient({ data, operatorName }: UrgentCallbackClien
         </div>
       </div>
 
+      <section className="metrics" aria-label="Urgent callback metrics">
+        <div className="metric accentUrgent">
+          <span className="metricLabel">New requests</span>
+          <strong className="metricValue">{summary.new}</strong>
+          <span className="metricHint">Awaiting review</span>
+        </div>
+        <div className="metric accentReview">
+          <span className="metricLabel">In review</span>
+          <strong className="metricValue">{summary.in_review}</strong>
+          <span className="metricHint">Operator queue</span>
+        </div>
+        <div className="metric accentReady">
+          <span className="metricLabel">Callback approved</span>
+          <strong className="metricValue">{summary.callback_approved}</strong>
+          <span className="metricHint">Ready for preflight</span>
+        </div>
+        <div className="metric">
+          <span className="metricLabel">Resolved</span>
+          <strong className="metricValue">{summary.resolved}</strong>
+          <span className="metricHint">Closed requests</span>
+        </div>
+      </section>
+
       <section className="section">
         <div className="sectionHeader">
           <div>
             <h2>Urgent callback requests</h2>
-            <p>Siri, SMS, operator-created, and future app requests route here before real CALL-E callbacks.</p>
+            <p>Siri requests start an automatic CALL-E callback when the recipient is eligible and within the daily limit.</p>
           </div>
           <span className="count">{openCount} open</span>
         </div>
@@ -129,55 +287,101 @@ export function UrgentCallbackClient({ data, operatorName }: UrgentCallbackClien
               </tr>
             </thead>
             <tbody>
-              {visibleRequests.map((request) => (
-                <tr key={request.id}>
-                  <td>
-                    <strong>{request.recipient_name}</strong>
-                    <div className="muted">{request.masked_phone} · {request.delivery_area}</div>
-                  </td>
-                  <td><span className="tag">{sourceLabel(request.source)}</span></td>
-                  <td>{sourceLabel(request.safety_category)}</td>
-                  <td>{sourceLabel(request.condition)}</td>
-                  <td><span className={statusClass(request.status)}>{sourceLabel(request.status)}</span></td>
-                  <td>{request.request_text}</td>
-                  <td>
-                    <div className="rowActions">
-                      <button
-                        className="button compact secondary"
-                        disabled={isPending}
-                        onClick={() => changeStatus(request.id, "operator_review")}
-                        type="button"
-                      >
-                        Review
-                      </button>
-                      <button
-                        className="button compact"
-                        disabled={isPending || request.blocked}
-                        onClick={() => changeStatus(request.id, "callback_approved")}
-                        type="button"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        className="button compact secondary"
-                        disabled={isPending}
-                        onClick={() => changeStatus(request.id, "operator_review", "Operator call required.")}
-                        type="button"
-                      >
-                        Operator call
-                      </button>
-                      <button
-                        className="button compact secondary"
-                        disabled={isPending}
-                        onClick={() => changeStatus(request.id, "resolved", "Dismissed as duplicate.")}
-                        type="button"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {visibleRequests.map((request) => {
+                const displayStatus = callbackDisplayStatus(request);
+                const autoCallbackActive = Boolean(request.auto_run_id && !terminalCallbackStatus(displayStatus));
+                return (
+                  <tr key={request.id}>
+                    <td>
+                      <strong>{request.recipient_name}</strong>
+                      <div className="muted">{request.masked_phone} · {request.delivery_area}</div>
+                      <div className="muted">Requested {compactTime(request.requested_at ?? request.created_at)}</div>
+                      {(request.same_day_callback_count ?? 0) > 0 && (
+                        <div className="callbackRepeatMeta">
+                          <span className={request.callback_repeat_review_required ? "status blocked" : "status review"}>
+                            {request.same_day_callback_count} callback{request.same_day_callback_count === 1 ? "" : "s"} today
+                          </span>
+                          {request.callback_repeat_warning && <small>{request.callback_repeat_warning}</small>}
+                        </div>
+                      )}
+                    </td>
+                    <td><span className="tag">{sourceLabel(request.source)}</span></td>
+                    <td>{sourceLabel(request.safety_category)}</td>
+                    <td>{sourceLabel(request.condition)}</td>
+                    <td>
+                      <span className={statusClass(displayStatus)}>{sourceLabel(displayStatus)}</span>
+                      {request.auto_run_id && <div className="muted">Run {request.auto_run_id}</div>}
+                      {request.call_started_at && <div className="muted">Call started {compactTime(request.call_started_at)}</div>}
+                      {request.call_completed_at && <div className="muted">Call completed {compactTime(request.call_completed_at)}</div>}
+                      {request.auto_call_error && <div className="muted">{request.auto_call_error}</div>}
+                    </td>
+                    <td>{request.request_text}</td>
+                    <td>
+                      {terminalCallbackStatus(displayStatus) ? (
+                      <div className="rowActions">
+                        <button
+                          className="button compact secondary"
+                          disabled={isPending}
+                          onClick={() => changeStatus(request.id, "resolved", "Cleared from callback queue after terminal automatic callback.")}
+                          type="button"
+                        >
+                          Clear from queue
+                        </button>
+                      </div>
+                    ) : autoCallbackActive ? (
+                      <div className="rowActions">
+                        <span className="status ready">Automatic call started</span>
+                      </div>
+                    ) : (
+                      <div className="rowActions">
+                        <button
+                          className="button compact secondary"
+                          disabled={isPending}
+                          onClick={() => changeStatus(request.id, "operator_review")}
+                          type="button"
+                        >
+                          Review
+                        </button>
+                        <button
+                          className="button compact"
+                          disabled={isPending || request.blocked}
+                          onClick={() => changeStatus(request.id, "callback_approved")}
+                          type="button"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="button compact secondary"
+                          disabled={isPending}
+                          onClick={() => changeStatus(request.id, "operator_review", "Operator call required.")}
+                          type="button"
+                        >
+                          Operator call
+                        </button>
+                        <button
+                          className="button compact secondary"
+                          disabled={isPending}
+                          onClick={() => changeStatus(request.id, "resolved", "Dismissed as duplicate.")}
+                          type="button"
+                        >
+                          Dismiss
+                        </button>
+                        {isApprovedStatus(request.status) && (
+                          <button
+                            className="button compact"
+                            disabled={isPending || request.blocked}
+                            onClick={() => prepareCallbackCall(request)}
+                            type="button"
+                          >
+                            Prepare call
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

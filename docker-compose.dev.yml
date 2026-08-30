@@ -4,18 +4,30 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
+      CARECALL_LIVE_CALLS_ENABLED: "${CARECALL_LIVE_CALLS_ENABLED:-false}"
       CARECALL_MAX_LIVE_BATCH_SIZE: "${CARECALL_MAX_LIVE_BATCH_SIZE:-1}"
+      CARECALL_DEMO_MAX_PHONE: "${CARECALL_DEMO_MAX_PHONE:-}"
       CARECALL_BACKEND_API_TOKEN: "${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}"
-      CARECALL_DB_PATH: "/app/runtime/carecall.sqlite3"
       CARECALL_CALLE_PROVIDER: "${CARECALL_CALLE_PROVIDER:-api}"
-      CARECALL_CALLE_API_KEY: "${CARECALL_CALLE_API_KEY:-}"
       CARECALL_CALLE_API_BASE_URL: "${CARECALL_CALLE_API_BASE_URL:-https://api.heycall-e.com}"
+      CARECALL_CALLE_API_KEY: "${CARECALL_CALLE_API_KEY:-}"
       CARECALL_CALLE_REGION: "${CARECALL_CALLE_REGION:-GB}"
       CARECALL_CALLE_TIMEOUT_SECONDS: "${CARECALL_CALLE_TIMEOUT_SECONDS:-45}"
     ports:
-      - "8000:8000"
-    volumes:
-      - carecall_runtime:/app/runtime
+      - "${CARECALL_BACKEND_HOST_PORT:-8000}:8000"
 
-volumes:
-  carecall_runtime:
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      CARECALL_API_BASE_URL: "http://backend:8000"
+      CARECALL_AUTH_SECRET: "${CARECALL_AUTH_SECRET:-carecall-local-dev-secret}"
+      CARECALL_OPERATOR_USERNAME: "${CARECALL_OPERATOR_USERNAME:-carecall-coordinator}"
+      CARECALL_OPERATOR_PASSWORD: "${CARECALL_OPERATOR_PASSWORD:-carecall-demo-password}"
+      CARECALL_BACKEND_API_TOKEN: "${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}"
+    ports:
+      - "${CARECALL_FRONTEND_HOST_PORT:-3000}:3000"
+    depends_on:
+      - backend

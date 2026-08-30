@@ -1,18 +1,37 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { createSessionToken } from "../lib/auth-session";
 import Home from "./page";
 
-describe("Home", () => {
-  it("renders the branded public entry gateway", () => {
-    render(<Home />);
+const cookieState = vi.hoisted(() => ({ value: undefined as string | undefined }));
 
-    expect(screen.getByRole("img", { name: "Care Call AI logo" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Care seen. Needs heard. Help delivered." })).toBeTruthy();
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(async () => ({
+    get: () => (cookieState.value ? { value: cookieState.value } : undefined),
+  })),
+}));
+
+describe("Home", () => {
+  it("renders the public start page for signed-out visitors", async () => {
+    cookieState.value = undefined;
+
+    render(await Home());
+
+    expect(screen.getByRole("heading", { name: "Care Call AI" })).toBeTruthy();
+    expect(screen.getByText("Care seen. Needs heard. Help delivered.")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Login" }).getAttribute("href")).toBe("/login");
-    expect(screen.getByRole("link", { name: "Support" }).getAttribute("href")).toBe("/support");
     expect(screen.getByRole("link", { name: "Privacy policy" }).getAttribute("href")).toBe("/privacy");
     expect(screen.getByRole("link", { name: "Terms and conditions" }).getAttribute("href")).toBe("/terms");
-    expect(screen.getByText("© 2026 Alex Raixon. All rights reserved.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Support" }).getAttribute("href")).toBe("/support");
+  });
+
+  it("changes the primary action to dashboard for signed-in operators", async () => {
+    cookieState.value = await createSessionToken("carecall-coordinator");
+
+    render(await Home());
+
+    expect(screen.getByRole("link", { name: "Dashboard" }).getAttribute("href")).toBe("/dashboard");
+    expect(screen.queryByRole("link", { name: "Login" })).toBeNull();
   });
 });

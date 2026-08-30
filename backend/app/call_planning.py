@@ -29,6 +29,9 @@ class CallPlanPreview:
     operator_repeat_available: bool = False
     operator_repeat_limit_reached: bool = False
     same_day_repeat_warning: str = ""
+    same_day_callback_count: int = 0
+    callback_repeat_review_required: bool = False
+    callback_repeat_warning: str = ""
 
 
 def build_call_plan_preview(recipient: Recipient, call_date: str) -> CallPlanPreview:

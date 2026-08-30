@@ -4,6 +4,7 @@ import { getCurrentOperatorName } from "../../../lib/current-operator";
 import { logTechnicalError } from "../../../lib/technical-log";
 import type { DashboardPayload } from "../../../lib/types";
 import { SERVICE_DATA_ERROR } from "../../../lib/user-messages";
+import { urgentCallbackOpenCount } from "../../../lib/urgent-callback-events";
 
 function humanize(value: string) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -35,7 +36,7 @@ export default async function RecipientsPage() {
   }
 
   const operatorName = await getCurrentOperatorName();
-  const urgentCount = (data.callback_requests ?? []).filter((request) => request.status === "operator_review").length;
+  const urgentCount = urgentCallbackOpenCount(data.callback_requests ?? []);
 
   return (
     <AppShell active="recipients" operatorName={operatorName} urgentCallbackCount={urgentCount}>

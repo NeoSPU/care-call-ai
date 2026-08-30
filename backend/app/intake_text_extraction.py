@@ -4,35 +4,15 @@ from __future__ import annotations
 
 import re
 
+from .agent_skills.practical_support import PRACTICAL_SUPPORT_SKILL
 from .intake_models import ExtractedNeed, NeedCategory, ReviewState, Urgency
 
 
-GROCERY_ITEM_ALIASES = {
-    "bread": ("bread", "loaf", "батон", "хлеб"),
-    "milk": ("milk", "молоко"),
-    "eggs": ("eggs", "egg", "яйца", "яиц"),
-    "cheese": ("cheese", "сыр"),
-    "butter": ("butter", "масло"),
-    "tea": ("tea", "чай"),
-    "coffee": ("coffee", "кофе"),
-    "rice": ("rice", "рис"),
-    "porridge oats": ("porridge oats", "oats", "овсянка", "овсяные хлопья"),
-    "pasta": ("pasta", "макароны", "паста"),
-    "potatoes": ("potatoes", "potato", "картофель", "картошка"),
-    "fruit": ("fruit", "fruits", "фрукты"),
-    "vegetables": ("vegetables", "vegetable", "овощи"),
-    "water": ("drinking water", "water", "вода"),
-}
-
-GROCERY_CATEGORY_KEYWORDS = ("groceries", "grocery", "food", "products", "продукты", "еда")
-MEDICATION_ALIASES = ("medication", "medicine", "prescription", "pharmacy", "лекарство", "лекарства", "рецепт", "аптека")
-SERVICE_KEYWORDS = {
-    NeedCategory.CLEANING: ("cleaning", "clean", "уборка", "убрать"),
-    NeedCategory.TRANSPORT: ("transport", "taxi", "ride", "такси", "транспорт"),
-    NeedCategory.COMPANIONSHIP: ("companionship", "visit", "call back", "поговорить", "визит"),
-    NeedCategory.REPAIR: ("repair", "tap", "plumber", "fix", "ремонт", "кран", "сантехник"),
-    NeedCategory.DOCUMENTS: ("documents", "paperwork", "forms", "документы"),
-}
+GROCERY_ITEM_ALIASES = PRACTICAL_SUPPORT_SKILL.grocery_item_aliases
+GROCERY_CATEGORY_KEYWORDS = PRACTICAL_SUPPORT_SKILL.grocery_category_keywords
+MEDICATION_ALIASES = PRACTICAL_SUPPORT_SKILL.medication_aliases
+SERVICE_KEYWORDS = PRACTICAL_SUPPORT_SKILL.service_keywords
+PROHIBITED_REQUEST_KEYWORDS = PRACTICAL_SUPPORT_SKILL.prohibited_request_keywords
 
 REQUEST_SIGNALS = (
     "asked for",
@@ -79,6 +59,8 @@ NEGATED_REQUEST_PATTERNS = (
 AGENT_OPTION_LIST_PATTERNS = (
     r"do you need groceries,\s*medication pickup,\s*cleaning,\s*transport,\s*companionship,\s*repairs,\s*documents help,\s*or another practical service\??",
     r"do you need groceries,\s*medication pickup,\s*cleaning,\s*transport,\s*companionship,\s*or another kind of help\??",
+    r"such as groceries,\s*medicines,\s*transport,\s*companionship,\s*cleaning,\s*repairs,\s*or documents\??",
+    r"groceries,\s*medicines,\s*transport,\s*companionship,\s*cleaning,\s*repairs,\s*or documents\??",
     r"groceries,\s*medication pickup,\s*cleaning,\s*transport,\s*companionship,\s*repairs,\s*documents help,\s*or another practical service",
 )
 URGENCY_OPTION_LIST_PATTERNS = (
@@ -122,6 +104,23 @@ def fallback_needs_from_text(text: str) -> list[ExtractedNeed]:
         if any(contains_word(normalized, keyword) for keyword in keywords):
             needs.append(_need(category, (category.value.replace("_", " "),), text))
     return needs
+
+
+def prohibited_request_reason(text: str) -> str:
+    request_text = _strip_agent_option_lists(text)
+    return prohibited_request_reason_from_any_text(request_text)
+
+
+def prohibited_request_reason_from_any_text(text: str) -> str:
+    normalized = normalize_text(text)
+    if not normalized:
+        return ""
+    if any(contains_word(normalized, keyword) for keyword in PROHIBITED_REQUEST_KEYWORDS):
+        return (
+            "The caller requested goods or services that require coordinator review "
+            "under the prohibited or region-restricted request policy."
+        )
+    return ""
 
 
 def urgency_from_text(text: str) -> Urgency:

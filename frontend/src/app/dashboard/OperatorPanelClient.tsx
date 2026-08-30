@@ -8,6 +8,7 @@ import { createBatch } from "../../lib/carecall-api";
 import { readStoredRoundSelection, storeRoundSelection } from "../../lib/round-selection";
 import { logTechnicalError } from "../../lib/technical-log";
 import type { DashboardPayload, PlannedCallDto, RecipientCardDto, ServiceRequestDto } from "../../lib/types";
+import { urgentCallbackOpenCount } from "../../lib/urgent-callback-events";
 import { SERVICE_SUPPORT_ERROR } from "../../lib/user-messages";
 
 function enrichRequests(data: DashboardPayload): ServiceRequestDto[] {
@@ -109,12 +110,12 @@ export function OperatorPanelClient({ data, operatorName }: OperatorPanelClientP
     <AppShell
       active="operator"
       operatorName={operatorName}
-      urgentCallbackCount={(data.callback_requests ?? []).filter((request) => request.status === "operator_review").length}
+      urgentCallbackCount={urgentCallbackOpenCount(data.callback_requests ?? [])}
     >
       <div className="content">
         <header className="topbar">
           <div className="topbarTitle">
-            <h1>Needs heard - Operator Panel</h1>
+            <h1><span className="sectionAccent heard">Needs heard</span> - Operator Panel</h1>
             <p>Prepare the current CALL-E auto-call session, review safety gates, and start preflight.</p>
           </div>
           <span className="roundPill">
@@ -245,7 +246,6 @@ export function OperatorPanelClient({ data, operatorName }: OperatorPanelClientP
                   <th>Recipient</th>
                   <th>Route</th>
                   <th>Automation status</th>
-                  <th>Key</th>
                 </tr>
               </thead>
               <tbody>
@@ -256,7 +256,6 @@ export function OperatorPanelClient({ data, operatorName }: OperatorPanelClientP
                     <td>
                       <span className="status ready">ready</span>
                     </td>
-                    <td className="mono">{call.idempotency_key}</td>
                   </tr>
                 ))}
               </tbody>

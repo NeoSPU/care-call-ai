@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .agent_skills.practical_support import PRACTICAL_SUPPORT_SKILL
 from .domain import CallSuitability, Condition, Recipient, Severity
 from .safety import call_route
 
@@ -14,6 +15,9 @@ from .safety import call_route
 PROHIBITED_TOPICS = (
     "Do not provide medical diagnosis, treatment advice, dosage advice, legal advice, financial advice, or emergency triage.",
     "Do not ask for passwords, banking details, PINs, government ID numbers, or payment card details.",
+    "Do not accept requests for illegal, exploitative, violent, sexual, biohazardous, or age-restricted goods or services; politely tell the caller that CareCall cannot process that item or service.",
+    "Do not include prohibited or unsupported items in the final practical support request; keep collecting and summarising only allowed groceries, medicines, care help, transport, repairs, documents help, or other lawful support.",
+    "Do not accept alcohol, tobacco, weapons, ammunition, illegal drugs, or controlled substances unless the request is clearly a lawful medical support request in the call region.",
     "Do not argue with, shame, patronise, or test the recipient's memory.",
     "If the recipient appears distressed, unsafe, confused in a concerning way, or in immediate danger, stop intake and mark human review.",
 )
@@ -137,7 +141,7 @@ def _caregiver_or_staff_goal(recipient: Recipient, route: str) -> CallGoal:
             "Ask whether direct future calls to the recipient are suitable and comfortable.",
         ),
         allowed_questions=(
-            "Does the person need groceries, medication pickup, cleaning, transport, companionship, repairs, documents help, or another practical service?",
+            f"Does the person need {PRACTICAL_SUPPORT_SKILL.service_options_text()}?",
             "Is anything needed today, tomorrow, this week, or not urgent?",
             "Is direct future calling suitable, or should CareCall continue through a caregiver or staff member?",
         ),
@@ -190,7 +194,7 @@ def _dementia_direct_goal(recipient: Recipient) -> CallGoal:
         questions = (
             "How are you feeling today?",
             "Would it be okay if I ask a few simple questions about practical help?",
-            "Do you need groceries, medication pickup, cleaning, transport, companionship, or another kind of help?",
+            f"Do you need {PRACTICAL_SUPPORT_SKILL.service_options_text()}?",
             "Is anything urgent for today?",
         )
 
@@ -241,7 +245,7 @@ def _general_direct_goal(recipient: Recipient) -> CallGoal:
         opening=f"Hello {recipient.display_name}, this is CareCall calling about practical support.",
         communication_style=tuple(style),
         allowed_questions=(
-            "Do you need groceries, medication pickup, cleaning, transport, companionship, repairs, documents help, or another practical service?",
+            f"Do you need {PRACTICAL_SUPPORT_SKILL.service_options_text()}?",
             "Is anything needed today, tomorrow, this week, or not urgent?",
             "Is there anything a coordinator should know before arranging help?",
         ),

@@ -1,6 +1,7 @@
 import unittest
 
-from app.extraction import ExtractedNeed, IntakeResult, IntakeStatus, NeedCategory, ReviewState, Urgency
+from app.domain import ServiceRequestStatus
+from app.extraction import ExtractedNeed, IntakeResult, IntakeStatus, NeedCategory, ReviewReasonCode, ReviewState, Urgency
 from app.routing import route_intake_result, route_need
 
 
@@ -16,7 +17,7 @@ class RoutingTest(unittest.TestCase):
         )
         self.assertEqual(request.queue, "delivery_volunteers")
         self.assertEqual(request.priority, "normal")
-        self.assertEqual(request.status, "ready_to_print")
+        self.assertEqual(request.status, ServiceRequestStatus.READY_TO_PRINT)
 
     def test_today_medication_is_urgent(self):
         request = route_need(
@@ -40,7 +41,7 @@ class RoutingTest(unittest.TestCase):
                 review_state=ReviewState.HUMAN_REVIEW,
             ),
         )
-        self.assertEqual(request.status, "review")
+        self.assertEqual(request.status, ServiceRequestStatus.REVIEW)
         self.assertEqual(request.queue, "coordinator_review")
 
     def test_emergency_result_becomes_review_request(self):
@@ -55,6 +56,19 @@ class RoutingTest(unittest.TestCase):
         self.assertEqual(len(requests), 1)
         self.assertEqual(requests[0].status, "review")
         self.assertEqual(requests[0].priority, "urgent")
+
+    def test_prohibited_only_result_does_not_create_empty_review_order(self):
+        requests = route_intake_result(
+            IntakeResult(
+                recipient_id="r-1",
+                status=IntakeStatus.COMPLETED,
+                human_review=True,
+                review_reasons=("Changed wording still says restricted request.",),
+                review_reason_codes=(ReviewReasonCode.PROHIBITED_REQUEST_EXCLUDED,),
+            )
+        )
+
+        self.assertEqual(requests, ())
 
 
 if __name__ == "__main__":

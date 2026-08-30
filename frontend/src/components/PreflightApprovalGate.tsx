@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   approvePreflight,
+  cancelRun,
   createBatch,
   getPreflight,
   importRunResult,
@@ -11,7 +12,7 @@ import {
 } from "../lib/carecall-api";
 import { storeRoundSelection } from "../lib/round-selection";
 import { logTechnicalError } from "../lib/technical-log";
-import type { PlannedCallDto, PreflightPayload } from "../lib/types";
+import type { PlannedCallDto, PreflightPayload, ServiceRequestDto } from "../lib/types";
 import { SERVICE_SUPPORT_ERROR } from "../lib/user-messages";
 
 const CONFIRMATION_LABELS = {
@@ -24,7 +25,7 @@ const CONFIRMATION_LABELS = {
 type ConfirmationKey = keyof typeof CONFIRMATION_LABELS;
 type RepeatConfirmationKey = "same_day_repeat_acknowledged";
 type ConfirmationState = Record<ConfirmationKey, boolean> & Partial<Record<RepeatConfirmationKey, boolean>>;
-type ProgressStatus = "idle" | "submitting" | "waiting" | "imported" | "failed";
+type ProgressStatus = "idle" | "submitting" | "waiting" | "imported" | "failed" | "canceled";
 type ActiveCallSession = {
   runId: string;
   startedAt: string;
@@ -39,6 +40,8 @@ type PreflightApprovalGateProps = {
 const AUTHORIZATION_PHRASE = "EXECUTE LIVE CALLS";
 const POLL_INTERVAL_MS = process.env.NODE_ENV === "test" ? 100 : 8000;
 const ACTIVE_SESSION_STORAGE_KEY = "carecall.activeLiveCallSession";
+const DEFERRED_PROVIDER_STATUSES = new Set(["busy", "declined", "expired", "no_answer", "voicemail"]);
+const FAILED_PROVIDER_STATUSES = new Set(["canceled", "cancelled", "failed"]);
 
 const emptyConfirmations: ConfirmationState = {
   active_consent: false,
@@ -102,6 +105,10 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
   const [sessionStartedAt, setSessionStartedAt] = useState("");
   const [progressStatus, setProgressStatus] = useState<ProgressStatus>("idle");
   const [importedRequestCount, setImportedRequestCount] = useState<number | null>(null);
+  const [plannedCallCount, setPlannedCallCount] = useState(0);
+  const [needsHeardCount, setNeedsHeardCount] = useState(0);
+  const [followUpCount, setFollowUpCount] = useState(0);
+  const [readyOrderCount, setReadyOrderCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [selectionError, setSelectionError] = useState("");
 
@@ -120,6 +127,7 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
   const repeatAcknowledgementNeeded = repeatPreviews.some((preview) => preview.operator_repeat_available);
   const repeatLimitReached = repeatPreviews.some((preview) => preview.operator_repeat_limit_reached);
   const repeatAcknowledged = confirmations.same_day_repeat_acknowledged === true;
+  const displayedPlannedCount = plannedCallCount || readyKeys.length;
   const liveReady =
     Boolean(planId) &&
     oneReadyRecipient &&
@@ -137,12 +145,19 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
     }
     setLiveRunId(restored.runId);
     setSessionStartedAt(restored.startedAt);
+    setPlannedCallCount(restored.plannedCount);
     setProgressStatus("waiting");
     setResult(activeSessionMessage(restored.startedAt));
   }, []);
 
   useEffect(() => {
-    if (!liveRunId || importedRequestCount !== null || progressStatus === "failed" || progressStatus === "imported") {
+    if (
+      !liveRunId ||
+      importedRequestCount !== null ||
+      progressStatus === "failed" ||
+      progressStatus === "imported" ||
+      progressStatus === "canceled"
+    ) {
       return undefined;
     }
     const timer = window.setInterval(() => {
@@ -202,6 +217,10 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
     setSessionStartedAt("");
     setProgressStatus("idle");
     setImportedRequestCount(null);
+    setPlannedCallCount(readyKeys.length);
+    setNeedsHeardCount(0);
+    setFollowUpCount(0);
+    setReadyOrderCount(0);
     clearActiveCallSession();
   }
 
@@ -215,6 +234,10 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
     setProgressStatus("submitting");
     const startedAt = new Date().toISOString();
     setSessionStartedAt(startedAt);
+    setPlannedCallCount(readyKeys.length);
+    setNeedsHeardCount(0);
+    setFollowUpCount(0);
+    setReadyOrderCount(0);
     setResult(activeSessionMessage(startedAt));
     setApprovalErrors([]);
     try {
@@ -273,25 +296,33 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
     if (!runId) {
       return;
     }
+    if (progressStatus === "canceled") {
+      return;
+    }
     if (!automatic) {
       setBusy(true);
     }
     try {
       const response = await importRunResult(runId);
       setProviderStatus(response.provider_status);
+      if (!response.imported && response.provider_status === "canceled") {
+        setProgressStatus("canceled");
+        clearActiveCallSession();
+        setResult("This CareCall tracking session was stopped by the operator. No orders will be created from it.");
+        return;
+      }
       if (!response.imported) {
         setProgressStatus("waiting");
         setResult(`CALL-E status: ${response.provider_status}. Waiting for a completed result before creating orders.`);
         return;
       }
       setImportedRequestCount(response.service_requests.length);
+      setNeedsHeardCount(isCompletedProviderStatus(response.provider_status) ? 1 : 0);
+      setFollowUpCount(followUpCountForResult(response.provider_status, response.service_requests));
+      setReadyOrderCount(readyOrderCountFor(response.service_requests));
       setProgressStatus("imported");
       clearActiveCallSession();
-      setResult(
-        `CALL-E result imported: ${response.service_requests.length} service request${
-          response.service_requests.length === 1 ? "" : "s"
-        } created.`,
-      );
+      setResult(importedResultMessage(response.provider_status, response.service_requests));
     } catch (error) {
       logTechnicalError("CALL-E result import failed.", error);
       if (!automatic) {
@@ -302,6 +333,32 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
       if (!automatic) {
         setBusy(false);
       }
+    }
+  }
+
+  async function cancelActiveSession() {
+    if (!liveRunId || progressStatus !== "waiting") {
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await cancelRun(
+        liveRunId,
+        "Operator stopped local CareCall tracking from the preflight progress window.",
+      );
+      setProgressStatus("canceled");
+      setProviderStatus(response.run.status);
+      setFollowUpCount(1);
+      clearActiveCallSession();
+      setResult(
+        "Care Call AI stopped local tracking for this run and will not import it or create orders from it. If CALL-E had already accepted the call, the provider-side call may still continue.",
+      );
+    } catch (error) {
+      logTechnicalError("CareCall session cancellation failed.", error);
+      setResult(SERVICE_SUPPORT_ERROR);
+      setProgressStatus("failed");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -410,11 +467,27 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
             Start calls
           </button>
           {liveRunId && (
-            <div className="postCallActions">
-              <span className="mono">Run {liveRunId}</span>
-              <button className="button secondary" disabled={busy} onClick={() => void importLatestResult()} type="button">
-                Check CALL-E result
-              </button>
+            <div className={`activeCallCard ${progressStatus}`}>
+              <div>
+                <span className="activeCallEyebrow">
+                  {progressStatus === "imported" ? "Completed tracking" : "Active call tracking"}
+                </span>
+                <strong className="mono">Run {liveRunId}</strong>
+                {sessionStartedAt && <small>Started {formatSessionTime(sessionStartedAt)}</small>}
+              </div>
+              <p>
+                {progressStatus === "imported"
+                  ? "CALL-E result has been imported. Open orders to review the generated handoff."
+                  : "The approved call chain is running. You can keep this page open or safely close the progress window."}
+              </p>
+              <div className="postCallActions">
+                <button className="button secondary" onClick={() => setProgressOpen(true)} type="button">
+                  View progress
+                </button>
+                <button className="button secondary" disabled={busy} onClick={() => void importLatestResult()} type="button">
+                  Check now
+                </button>
+              </div>
               {importedRequestCount !== null && (
                 <a className="textAction" href="/dashboard/orders/print">
                   Open orders
@@ -532,19 +605,23 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
             <div className="progressGrid" aria-label="Call progress summary">
               <div>
                 <span>Planned</span>
-                <strong>{readyKeys.length}</strong>
+                <strong>{displayedPlannedCount}</strong>
               </div>
               <div>
                 <span>Submitted</span>
                 <strong>{liveRunId ? 1 : progressStatus === "submitting" ? 0 : 0}</strong>
               </div>
               <div>
-                <span>Completed</span>
-                <strong>{progressStatus === "imported" ? 1 : 0}</strong>
+                <span>Needs heard</span>
+                <strong>{needsHeardCount}</strong>
+              </div>
+              <div>
+                <span>Follow-up</span>
+                <strong>{followUpCount}</strong>
               </div>
               <div>
                 <span>Orders</span>
-                <strong>{importedRequestCount ?? 0}</strong>
+                <strong>{readyOrderCount}</strong>
               </div>
             </div>
             <div className={`progressStatus ${progressStatus}`} role="status">
@@ -562,6 +639,11 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
               <button className="button secondary" disabled={busy || !liveRunId} onClick={() => void importLatestResult()} type="button">
                 Check now
               </button>
+              {progressStatus === "waiting" && (
+                <button className="button secondary dangerTextButton" disabled={busy || !liveRunId} onClick={() => void cancelActiveSession()} type="button">
+                  Stop tracking
+                </button>
+              )}
               {importedRequestCount !== null && (
                 <a className="button" href="/dashboard/orders/print">
                   Open orders
@@ -577,6 +659,35 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
 
 function liveAcceptedMessage(realCallsPlaced: number) {
   return `Live execution accepted: ${realCallsPlaced} real call${realCallsPlaced === 1 ? "" : "s"} placed. Waiting for CALL-E to finish the result.`;
+}
+
+function importedResultMessage(providerStatus: string, requests: ServiceRequestDto[]) {
+  const readyOrders = readyOrderCountFor(requests);
+  if (isCompletedProviderStatus(providerStatus) && readyOrders > 0) {
+    return `CALL-E result imported: ${readyOrders} printable order${readyOrders === 1 ? "" : "s"} created.`;
+  }
+  if (DEFERRED_PROVIDER_STATUSES.has(providerStatus)) {
+    return `CALL-E finished with ${providerStatus}. No printable order was created; coordinator follow-up is queued.`;
+  }
+  if (FAILED_PROVIDER_STATUSES.has(providerStatus)) {
+    return `CALL-E finished with ${providerStatus}. Coordinator review is queued.`;
+  }
+  return `CALL-E result imported: ${requests.length} service request${requests.length === 1 ? "" : "s"} created.`;
+}
+
+function isCompletedProviderStatus(providerStatus: string) {
+  return providerStatus === "completed";
+}
+
+function readyOrderCountFor(requests: ServiceRequestDto[]) {
+  return requests.filter((request) => request.status === "ready_to_print").length;
+}
+
+function followUpCountForResult(providerStatus: string, requests: ServiceRequestDto[]) {
+  if (DEFERRED_PROVIDER_STATUSES.has(providerStatus) || FAILED_PROVIDER_STATUSES.has(providerStatus)) {
+    return 1;
+  }
+  return requests.some((request) => request.status !== "ready_to_print") ? 1 : 0;
 }
 
 function activeSessionMessage(startedAt: string) {
@@ -639,6 +750,9 @@ function progressTitle(status: ProgressStatus) {
   }
   if (status === "failed") {
     return "Action needed";
+  }
+  if (status === "canceled") {
+    return "Session stopped";
   }
   return "Ready";
 }

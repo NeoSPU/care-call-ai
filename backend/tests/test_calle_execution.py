@@ -117,8 +117,10 @@ class CalleExecutionTest(unittest.TestCase):
         payload = json.loads(runner.commands[0][2])
         self.assertEqual(payload["to_phone"], "+15550101234")
         self.assertLess(len(payload["goal"]), len(previews[0].prompt_preview))
-        self.assertLess(len(payload["goal"]), 1000)
-        self.assertIn("Capture practical needs", payload["goal"])
+        self.assertLess(len(payload["goal"]), 1600)
+        self.assertIn("Only collect practical support needs", payload["goal"])
+        self.assertIn("Never order menu examples", payload["goal"])
+        self.assertIn("1-litre bottle of milk", payload["goal"])
         self.assertEqual(runner.commands[1], ("calle", "run_call", "plan-123"))
 
     def test_live_task_is_compact_but_keeps_safety_boundaries(self):
@@ -139,10 +141,12 @@ class CalleExecutionTest(unittest.TestCase):
 
         task = live_task_for_preview(preview)
 
-        self.assertLess(len(task), 1000)
+        self.assertLess(len(task), 1600)
         self.assertIn("Call Test Recipient", task)
         self.assertIn("practical support needs", task)
-        self.assertIn("Do not provide medical", task)
+        self.assertIn("Never order menu examples", task)
+        self.assertIn("1-litre bottle of milk", task)
+        self.assertIn("No medical", task)
         self.assertIn("human review", task)
 
     def test_repeat_live_task_mentions_same_day_follow_up_and_order_update(self):

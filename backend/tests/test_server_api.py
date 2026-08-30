@@ -7,6 +7,8 @@ from pathlib import Path
 
 from app.calle_execution import CallRunRecord, CallRunStatus
 from app.calle_readiness import CalleReadiness
+from app.api_models import service_requests_payload
+from app.domain import StoredServiceRequest
 from app.repository import Repository, connect, init_schema, seed_database
 from app.server import (
     approve_preflight_api_payload,
@@ -16,12 +18,16 @@ from app.server import (
     create_preflight_api_payload,
     execute_dry_run_api_payload,
     execute_live_api_payload,
+    cancel_run_api_payload,
     import_run_result_api_payload,
     operations_dashboard_api_payload,
+    print_orders_api_payload,
     run_status_api_payload,
     service_requests_api_payload,
     save_special_handling_approval_api_payload,
     update_callback_request_api_payload,
+    update_service_request_api_payload,
+    void_service_request_api_payload,
     update_recipient_safety,
 )
 from app.storage import load_seed_recipients
@@ -44,6 +50,54 @@ class FakeRunner:
 
 def ready():
     return CalleReadiness(cli_available=True, authenticated=True, tools_available=True)
+
+
+class ServiceRequestPayloadTests(unittest.TestCase):
+    def test_review_request_payload_includes_backend_release_suggestion_for_safe_notes(self):
+        payload = service_requests_payload(
+            (
+                StoredServiceRequest(
+                    id="svc-run-review-1",
+                    recipient_id="rec-001",
+                    category="other",
+                    queue="coordinator_review",
+                    sla_hours=8,
+                    priority="review",
+                    status="review",
+                    items=(),
+                    notes="The recipient confirmed an added practical support request: 1 package of broth needed for tomorrow.",
+                    human_review_reason="CALL-E returned a completed summary without structured practical needs.",
+                ),
+            )
+        )
+
+        request = payload["service_requests"][0]
+
+        self.assertEqual(request["suggested_category"], "groceries")
+        self.assertEqual(request["suggested_items"], ["1 package of broth"])
+
+    def test_review_request_payload_suppresses_suggestion_for_prohibited_notes(self):
+        payload = service_requests_payload(
+            (
+                StoredServiceRequest(
+                    id="svc-run-review-2",
+                    recipient_id="rec-001",
+                    category="other",
+                    queue="coordinator_review",
+                    sla_hours=8,
+                    priority="review",
+                    status="review",
+                    items=(),
+                    notes="The recipient asked for beer for tomorrow.",
+                    human_review_reason="Restricted request.",
+                ),
+            )
+        )
+
+        request = payload["service_requests"][0]
+
+        self.assertEqual(request["suggested_category"], "")
+        self.assertEqual(request["suggested_items"], [])
 
 
 class ServerCallApiTests(unittest.TestCase):
@@ -216,10 +270,14 @@ class ServerCallApiTests(unittest.TestCase):
         self.assertEqual(created["summary"]["new"], 1)
         self.assertEqual(request["recipient_name"], "Eleanor Thompson")
         self.assertEqual(request["source"], "siri_shortcut")
+
         self.assertEqual(request["status"], "operator_review")
         self.assertEqual(request["priority"], "urgent")
         self.assertEqual(request["safety_category"], "non_critical")
         self.assertTrue(request["masked_phone"].startswith("+"))
+        self.assertEqual(request["same_day_callback_count"], 1)
+        self.assertFalse(request["callback_repeat_review_required"])
+        self.assertIn("requested 1 same-day callback", request["callback_repeat_warning"])
 
         listed = callback_requests_api_payload(self.db_path)
         self.assertEqual(listed["summary"]["new"], 1)
@@ -238,6 +296,171 @@ class ServerCallApiTests(unittest.TestCase):
         self.assertEqual(updated["summary"]["callback_approved"], 1)
         self.assertEqual(updated["callback_requests"][0]["status"], "approved_callback")
         self.assertEqual(updated["callback_requests"][0]["resolution_note"], "Operator approved callback after review.")
+
+    def test_operator_can_update_and_remove_service_request_payloads(self):
+        current = service_requests_api_payload(self.db_path)["service_requests"][0]
+
+        updated = update_service_request_api_payload(
+            self.db_path,
+            current["id"],
+            {
+                "category": "groceries",
+                "items": ["1 package of bread"],
+                "notes": "Corrected by coordinator.",
+                "priority": "urgent",
+                "status": "ready_to_print",
+                "operator": "Max Neous",
+                "reason": "Callback result corrected.",
+            },
+        )["service_requests"][0]
+
+        self.assertEqual(updated["category"], "groceries")
+        self.assertEqual(updated["items"], ["1 package of bread"])
+        self.assertEqual(updated["status"], "ready_to_print")
+        self.assertEqual(updated["human_review_reason"], "")
+
+        removed = void_service_request_api_payload(
+            self.db_path,
+            current["id"],
+            {"operator": "Max Neous", "reason": "Duplicate."},
+        )["service_requests"][0]
+
+        self.assertEqual(removed["status"], "void")
+
+    def test_siri_callback_request_starts_immediate_live_callback_when_eligible(self):
+        runner = FakeRunner(
+            {
+                ("calle", "plan_call"): (0, '{"plan_id":"callback-plan-123"}', ""),
+                ("calle", "run_call", "callback-plan-123"): (0, '{"run_id":"callback-run-456"}', ""),
+            }
+        )
+
+        created = create_callback_request_api_payload(
+            self.db_path,
+            {
+                "recipient_id": "rec-001",
+                "source": "siri_shortcut",
+                "request_text": "Please call me back now.",
+                "priority": "urgent",
+            },
+            env={"CARECALL_LIVE_CALLS_ENABLED": "true", "CARECALL_MAX_AUTO_CALLBACK_CALLS_PER_DAY": "3"},
+            readiness=ready(),
+            runner=runner,
+        )
+
+        request = created["callback_requests"][0]
+        auto_callback = created["auto_callback"]
+        self.assertEqual(request["status"], "auto_callback_started")
+        self.assertEqual(request["auto_call_status"], "auto_callback_started")
+        self.assertTrue(request["auto_run_id"].startswith("run-"))
+        self.assertEqual(auto_callback["status"], "auto_callback_started")
+        self.assertEqual(auto_callback["real_calls_placed"], 1)
+        self.assertEqual(runner.commands[0][0:2], ("calle", "plan_call"))
+        self.assertEqual(runner.commands[1], ("calle", "run_call", "callback-plan-123"))
+
+        run = run_status_api_payload(self.db_path, request["auto_run_id"])["run"]
+        self.assertEqual(run["status"], "running")
+        self.assertEqual(run["mode"], "live")
+        self.assertEqual(run["provider_run_id"], "callback-run-456")
+
+    def test_siri_callback_import_marks_callback_completed_and_creates_order(self):
+        runner = FakeRunner(
+            {
+                ("calle", "plan_call"): (0, '{"plan_id":"callback-plan-123"}', ""),
+                ("calle", "run_call", "callback-plan-123"): (0, '{"run_id":"callback-run-456"}', ""),
+            }
+        )
+        created = create_callback_request_api_payload(
+            self.db_path,
+            {
+                "recipient_id": "rec-001",
+                "source": "siri_shortcut",
+                "request_text": "Please call me back.",
+                "priority": "urgent",
+            },
+            env={"CARECALL_LIVE_CALLS_ENABLED": "true", "CARECALL_MAX_AUTO_CALLBACK_CALLS_PER_DAY": "3"},
+            readiness=ready(),
+            runner=runner,
+        )
+        request = created["callback_requests"][0]
+        run_id = request["auto_run_id"]
+        result_runner = FakeRunner(
+            {
+                ("calle", "get_call_run", "callback-run-456"): (
+                    0,
+                    json.dumps(
+                        {
+                            "status": "completed",
+                            "summary": "Alex asked for milk for tomorrow.",
+                            "needs": [
+                                {
+                                    "category": "groceries",
+                                    "items": ["1 litre milk"],
+                                    "urgency": "tomorrow",
+                                    "notes": "Requested during automatic callback.",
+                                }
+                            ],
+                        }
+                    ),
+                    "",
+                )
+            }
+        )
+
+        imported = import_run_result_api_payload(self.db_path, run_id, runner=result_runner)
+        listed = callback_requests_api_payload(self.db_path)
+        updated = next(item for item in listed["callback_requests"] if item["id"] == request["id"])
+        print_orders = print_orders_api_payload(self.db_path)
+        callback_orders = [
+            item for item in print_orders["service_requests"] if item["id"].startswith(f"svc-{run_id}-")
+        ]
+
+        self.assertTrue(imported["imported"])
+        self.assertEqual(updated["status"], "auto_callback_completed")
+        self.assertEqual(updated["auto_call_status"], "auto_callback_completed")
+        self.assertEqual(updated["auto_run_id"], run_id)
+        self.assertTrue(updated["call_started_at"])
+        self.assertTrue(updated["call_completed_at"])
+        self.assertEqual(updated["provider_run_id"], "callback-run-456")
+        self.assertEqual(callback_orders[0]["category"], "groceries")
+        self.assertEqual(callback_orders[0]["items"], ["1 litre milk"])
+
+    def test_siri_callback_request_daily_limit_blocks_fourth_auto_callback(self):
+        for index in range(3):
+            create_callback_request_api_payload(
+                self.db_path,
+                {
+                    "recipient_id": "rec-001",
+                    "source": "siri_shortcut",
+                    "request_text": f"Please call me back #{index + 1}.",
+                    "priority": "urgent",
+                },
+                env={"CARECALL_LIVE_CALLS_ENABLED": "false", "CARECALL_MAX_AUTO_CALLBACK_CALLS_PER_DAY": "3"},
+                readiness=ready(),
+                runner=FakeRunner({}),
+            )
+
+        runner = FakeRunner({})
+        limited = create_callback_request_api_payload(
+            self.db_path,
+            {
+                "recipient_id": "rec-001",
+                "source": "siri_shortcut",
+                "request_text": "Please call me back again.",
+                "priority": "urgent",
+            },
+            env={"CARECALL_LIVE_CALLS_ENABLED": "true", "CARECALL_MAX_AUTO_CALLBACK_CALLS_PER_DAY": "3"},
+            readiness=ready(),
+            runner=runner,
+        )
+
+        request = limited["callback_requests"][0]
+        self.assertEqual(request["status"], "callback_limit_reached")
+        self.assertEqual(request["same_day_callback_count"], 4)
+        self.assertTrue(request["callback_repeat_review_required"])
+        self.assertIn("3 recipient-triggered calls per day", request["callback_repeat_warning"])
+        self.assertEqual(limited["auto_callback"]["status"], "callback_limit_reached")
+        self.assertEqual(runner.commands, [])
 
     def test_approval_accepts_only_current_exact_ready_keyset_with_confirmations(self):
         batch = create_batch_api_payload(
@@ -476,6 +699,197 @@ class ServerCallApiTests(unittest.TestCase):
         self.assertEqual(len(imported_requests), 1)
         self.assertIn(("calle", "get_call_run", "provider-run-456"), result_runner.commands)
 
+    def test_print_orders_keep_same_day_ready_orders_but_exclude_latest_prohibited_items(self):
+        conn = connect(self.db_path)
+        try:
+            repo = Repository(conn)
+            old_run = repo.save_call_runs(
+                plan_id="plan-old-order",
+                approval_id="approval-old-order",
+                records=[
+                    CallRunRecord(
+                        recipient_id="rec-001",
+                        idempotency_key="old-order-key",
+                        status=CallRunStatus.RUNNING,
+                        plan_id="provider-plan-old",
+                        run_id="provider-run-old-order",
+                        masked_phone="+1******1001",
+                    )
+                ],
+                mode="live",
+            )[0]
+        finally:
+            conn.close()
+
+        runner = FakeRunner(
+            {
+                ("calle", "get_call_run", "provider-run-old-order"): (
+                    0,
+                    json.dumps(
+                        {
+                            "status": "completed",
+                            "summary": "Alex asked for bread and milk tomorrow.",
+                            "needs": [
+                                {
+                                    "category": "groceries",
+                                    "items": ["bread", "milk"],
+                                    "urgency": "tomorrow",
+                                }
+                            ],
+                        }
+                    ),
+                    "",
+                )
+            }
+        )
+        import_run_result_api_payload(self.db_path, old_run.id, runner=runner)
+
+        conn = connect(self.db_path)
+        try:
+            repo = Repository(conn)
+            latest_run = repo.save_call_runs(
+                plan_id="plan-restricted",
+                approval_id="approval-restricted",
+                records=[
+                    CallRunRecord(
+                        recipient_id="rec-001",
+                        idempotency_key="restricted-key",
+                        status=CallRunStatus.RUNNING,
+                        plan_id="provider-plan-restricted",
+                        run_id="provider-run-restricted",
+                        masked_phone="+1******1001",
+                    )
+                ],
+                mode="live",
+            )[0]
+        finally:
+            conn.close()
+
+        restricted_runner = FakeRunner(
+            {
+                ("calle", "get_call_run", "provider-run-restricted"): (
+                    0,
+                    json.dumps(
+                        {
+                            "status": "completed",
+                            "summary": "Alex asked for 10 cans of beer.",
+                            "needs": [
+                                {
+                                    "category": "groceries",
+                                    "items": ["10 cans of beer"],
+                                    "urgency": "today",
+                                }
+                            ],
+                        }
+                    ),
+                    "",
+                )
+            }
+        )
+        import_run_result_api_payload(self.db_path, latest_run.id, runner=restricted_runner)
+
+        print_orders = print_orders_api_payload(self.db_path, env={})["service_requests"]
+
+        self.assertEqual(len(print_orders), 1)
+        self.assertEqual(print_orders[0]["category"], "groceries")
+        self.assertEqual(print_orders[0]["items"], ["bread", "milk"])
+        self.assertNotIn("beer", json.dumps(print_orders))
+
+    def test_print_orders_imports_completed_auto_callback_before_rendering_orders(self):
+        conn = connect(self.db_path)
+        try:
+            repo = Repository(conn)
+            cleaning_run = repo.save_call_runs(
+                plan_id="plan-filming-cleaning",
+                approval_id="approval-filming-cleaning",
+                records=[
+                    CallRunRecord(
+                        recipient_id="rec-001",
+                        idempotency_key="filming-cleaning-key",
+                        status=CallRunStatus.RUNNING,
+                        plan_id="provider-plan-filming-cleaning",
+                        run_id="provider-run-filming-cleaning",
+                        masked_phone="+1******1001",
+                    )
+                ],
+                mode="live",
+            )[0]
+            repo.save_run_result_bundle(
+                cleaning_run.id,
+                {
+                    "status": "completed",
+                    "needs": [
+                        {
+                            "category": "cleaning",
+                            "items": ["flat cleaning"],
+                            "urgency": "tomorrow",
+                        }
+                    ],
+                },
+            )
+            callback = repo.create_callback_request(
+                recipient_id="rec-001",
+                source="siri_shortcut",
+                request_text="Please call me back.",
+                priority="urgent",
+            )
+            callback_run = repo.save_call_runs(
+                plan_id=f"callback-{callback.id}",
+                approval_id=callback.id,
+                records=[
+                    CallRunRecord(
+                        recipient_id="rec-001",
+                        idempotency_key="filming-callback-key",
+                        status=CallRunStatus.RUNNING,
+                        plan_id="provider-plan-filming-callback",
+                        run_id="provider-run-filming-callback",
+                        masked_phone="+1******1001",
+                    )
+                ],
+                mode="live",
+            )[0]
+            repo.attach_callback_auto_call(
+                callback.id,
+                run_id=callback_run.id,
+                status="operator_review",
+                resolution_note="Operator review was selected after the automatic callback had already started.",
+            )
+        finally:
+            conn.close()
+
+        callback_runner = FakeRunner(
+            {
+                ("calle", "get_call_run", "provider-run-filming-callback"): (
+                    0,
+                    json.dumps(
+                        {
+                            "status": "completed",
+                            "summary": "Angela asked to add porridge, oat milk, and eggs for tomorrow.",
+                            "needs": [
+                                {
+                                    "category": "groceries",
+                                    "items": ["1 pack of porridge", "1 carton of oat milk", "1 pack of eggs"],
+                                    "urgency": "tomorrow",
+                                }
+                            ],
+                        }
+                    ),
+                    "",
+                )
+            }
+        )
+
+        print_orders = print_orders_api_payload(self.db_path, env={}, runner=callback_runner)["service_requests"]
+        callback_queue = callback_requests_api_payload(self.db_path, runner=callback_runner)["callback_requests"]
+        by_category = {request["category"]: request for request in print_orders if request["recipient_id"] == "rec-001"}
+
+        self.assertEqual(by_category["cleaning"]["items"], ["flat cleaning"])
+        self.assertEqual(
+            by_category["groceries"]["items"],
+            ["1 pack of porridge", "1 carton of oat milk", "1 pack of eggs"],
+        )
+        self.assertEqual(callback_queue[0]["status"], "auto_callback_completed")
+
     def test_same_day_repeat_call_requires_explicit_repeat_acknowledgement(self):
         call_date = date.today().isoformat()
         conn = connect(self.db_path)
@@ -592,6 +1006,35 @@ class ServerCallApiTests(unittest.TestCase):
         self.assertFalse(rejected["approved"])
         self.assertIn("Operator-initiated same-day repeat call limit", " ".join(rejected["blocked_reasons"]))
 
+    def test_same_day_callback_requests_are_counted_separately_from_operator_repeat_limit(self):
+        call_date = date.today().isoformat()
+        conn = connect(self.db_path)
+        try:
+            repo = Repository(conn)
+            for index in range(5):
+                repo.create_callback_request(
+                    recipient_id="rec-001",
+                    source="siri",
+                    request_text=f"Please call me back about groceries {index}.",
+                    priority="urgent",
+                    operator="",
+                )
+        finally:
+            conn.close()
+
+        batch = create_batch_api_payload(
+            self.db_path,
+            {"selected_recipient_ids": ["rec-001"], "call_date": call_date},
+        )
+        preflight = create_preflight_api_payload(self.db_path, {"batch_id": batch["batch"]["id"]})
+        preview = preflight["ready_previews"][0]
+
+        self.assertEqual(preview["same_day_call_count"], 0)
+        self.assertFalse(preview["operator_repeat_limit_reached"])
+        self.assertEqual(preview["same_day_callback_count"], 5)
+        self.assertTrue(preview["callback_repeat_review_required"])
+        self.assertIn("limited to 3 recipient-triggered calls per day", preview["callback_repeat_warning"])
+
     def test_repeat_call_import_merges_into_same_day_category_order(self):
         conn = connect(self.db_path)
         try:
@@ -691,6 +1134,53 @@ class ServerCallApiTests(unittest.TestCase):
 
         imported_again = import_run_result_api_payload(self.db_path, second_run.id, runner=runner)
         self.assertEqual(imported_again["service_requests"][0]["update_count"], 1)
+
+    def test_cancelled_run_does_not_import_or_create_orders(self):
+        conn = connect(self.db_path)
+        try:
+            repo = Repository(conn)
+            run = repo.save_call_runs(
+                plan_id="plan-cancel",
+                approval_id="approval-cancel",
+                records=[
+                    CallRunRecord(
+                        recipient_id="rec-001",
+                        idempotency_key="cancel-key",
+                        status=CallRunStatus.RUNNING,
+                        plan_id="provider-plan-cancel",
+                        run_id="provider-run-cancel",
+                        masked_phone="+1******1001",
+                    )
+                ],
+                mode="live",
+            )[0]
+        finally:
+            conn.close()
+
+        canceled = cancel_run_api_payload(
+            self.db_path,
+            run.id,
+            {"reason": "Operator stopped the active session after noticing a card error."},
+        )
+        runner = FakeRunner(
+            {
+                ("calle", "get_call_run", "provider-run-cancel"): (
+                    0,
+                    '{"status":"completed","summary":"Alex asked for milk.","needs":[{"category":"groceries","items":["milk"],"urgency":"tomorrow"}]}',
+                    "",
+                )
+            }
+        )
+        imported = import_run_result_api_payload(self.db_path, run.id, runner=runner)
+        requests = service_requests_api_payload(self.db_path)["service_requests"]
+
+        self.assertTrue(canceled["canceled"])
+        self.assertEqual(canceled["run"]["status"], "canceled")
+        self.assertIn("Operator stopped", canceled["run"]["error"])
+        self.assertFalse(imported["imported"])
+        self.assertEqual(imported["provider_status"], "canceled")
+        self.assertEqual(runner.commands, [])
+        self.assertFalse(any(request["id"].startswith(f"svc-{run.id}-") for request in requests))
 
     def test_import_extracts_developer_api_recipient_structured_result(self):
         batch = create_batch_api_payload(

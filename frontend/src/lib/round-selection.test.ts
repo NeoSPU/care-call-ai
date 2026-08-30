@@ -32,9 +32,9 @@ describe("round selection storage", () => {
     ]);
   });
 
-  it("falls back to backend defaults when saved storage cannot be parsed", () => {
+  it("keeps an empty operator selection when saved storage cannot be parsed", () => {
     window.localStorage.setItem("carecall:selected-recipient-ids", "{broken");
 
-    expect(readStoredRoundSelection(["rec-api-001"])).toBeNull();
+    expect(readStoredRoundSelection(["rec-api-001"])).toEqual([]);
   });
 });

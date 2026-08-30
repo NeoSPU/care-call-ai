@@ -1,7 +1,16 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useState } from "react";
+import type { MouseEvent, ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { createBatch, getCallbackRequests } from "../lib/carecall-api";
+import { readStoredRoundSelectionIds, storeRoundSelection } from "../lib/round-selection";
+import {
+  readUrgentCallbackCountEvent,
+  urgentCallbackOpenCount,
+  URGENT_CALLBACK_COUNT_EVENT,
+} from "../lib/urgent-callback-events";
+import { AssistantWidget } from "./AssistantWidget";
+import { ThemeToggle } from "./ThemeToggle";
 
 type AppShellProps = {
   active: "dashboard" | "operator" | "preflight" | "orders" | "recipients" | "urgent";
@@ -15,7 +24,7 @@ type NavItem = {
   caption?: string;
   group: string;
   icon: string;
-  key: AppShellProps["active"] | "requests";
+  key: AppShellProps["active"];
   label: string;
   href: string;
 };
@@ -23,7 +32,7 @@ type NavItem = {
 const navItems: NavItem[] = [
   {
     badge: null,
-    group: "Operations",
+    group: "Care seen",
     icon: "dashboard",
     key: "dashboard",
     label: "Dashboard",
@@ -32,7 +41,7 @@ const navItems: NavItem[] = [
   },
   {
     badge: null,
-    group: "Operations",
+    group: "Needs heard",
     icon: "play",
     key: "operator",
     label: "Operator Panel",
@@ -40,8 +49,8 @@ const navItems: NavItem[] = [
     href: "/dashboard/operator",
   },
   {
-    badge: "28",
-    group: "Operations",
+    badge: null,
+    group: "Needs heard",
     icon: "shield",
     key: "preflight",
     label: "Round preflight",
@@ -49,7 +58,7 @@ const navItems: NavItem[] = [
   },
   {
     badge: null,
-    group: "Operations",
+    group: "Needs heard",
     icon: "users",
     key: "recipients",
     label: "Recipients",
@@ -57,8 +66,8 @@ const navItems: NavItem[] = [
     href: "/dashboard/recipients",
   },
   {
-    badge: "4",
-    group: "Dispatch",
+    badge: null,
+    group: "Help delivered",
     icon: "printer",
     key: "orders",
     label: "Orders",
@@ -67,21 +76,33 @@ const navItems: NavItem[] = [
   },
   {
     badge: "0",
-    group: "Dispatch",
+    group: "Help delivered",
     icon: "urgent",
     key: "urgent",
     label: "Urgent Callback",
     href: "/dashboard/urgent-callback",
   },
-  {
-    badge: null,
-    group: "Dispatch",
-    icon: "check",
-    key: "requests",
-    label: "Service requests",
-    href: "/dashboard#requests",
-  },
 ];
+
+const navGroups = navItems.reduce<Array<{ group: string; items: NavItem[] }>>((groups, item) => {
+  const existing = groups.find((candidate) => candidate.group === item.group);
+  if (existing) {
+    existing.items.push(item);
+  } else {
+    groups.push({ group: item.group, items: [item] });
+  }
+  return groups;
+}, []);
+
+function navGroupTone(group: string) {
+  if (group === "Care seen") {
+    return "seen";
+  }
+  if (group === "Needs heard") {
+    return "heard";
+  }
+  return "delivered";
+}
 
 function NavIcon({ name }: { name: string }) {
   if (name === "dashboard") {
@@ -163,9 +184,79 @@ export function AppShell({
   urgentCallbackCount = 0,
 }: AppShellProps) {
   const [open, setOpen] = useState(false);
-  const [assistantOpen, setAssistantOpen] = useState(false);
-  let lastGroup = "";
+  const [liveUrgentCallbackCount, setLiveUrgentCallbackCount] = useState(urgentCallbackCount);
+  const [preflightNavBusy, setPreflightNavBusy] = useState(false);
+  const [preflightNavMessage, setPreflightNavMessage] = useState("");
   const operatorInitials = initialsFor(operatorName);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshUrgentCallbackCount() {
+      try {
+        const payload = await getCallbackRequests();
+        if (!cancelled) {
+          setLiveUrgentCallbackCount(urgentCallbackOpenCount(payload.callback_requests));
+        }
+      } catch {
+        // Keep the last known badge count. Full API errors are shown on the target page.
+      }
+    }
+
+    const handleUrgentCallbackCount = (event: Event) => {
+      const count = readUrgentCallbackCountEvent(event);
+      if (count !== null) {
+        setLiveUrgentCallbackCount(count);
+      }
+    };
+
+    const refreshOnVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void refreshUrgentCallbackCount();
+      }
+    };
+
+    const interval = window.setInterval(refreshUrgentCallbackCount, 15_000);
+    window.addEventListener("focus", refreshUrgentCallbackCount);
+    window.addEventListener(URGENT_CALLBACK_COUNT_EVENT, handleUrgentCallbackCount);
+    document.addEventListener("visibilitychange", refreshOnVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshUrgentCallbackCount);
+      window.removeEventListener(URGENT_CALLBACK_COUNT_EVENT, handleUrgentCallbackCount);
+      document.removeEventListener("visibilitychange", refreshOnVisibility);
+    };
+  }, []);
+
+  async function openPreflightFromStoredSelection(event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    if (preflightNavBusy) {
+      return;
+    }
+
+    const selectedRecipientIds = readStoredRoundSelectionIds();
+    if (selectedRecipientIds.length === 0) {
+      window.location.href = "/dashboard/operator#call-list";
+      return;
+    }
+
+    setPreflightNavBusy(true);
+    setPreflightNavMessage("");
+    try {
+      const response = await createBatch({
+        selected_recipient_ids: selectedRecipientIds,
+        label: "CareCall selected daily round",
+        call_date: "2026-08-01",
+      });
+      storeRoundSelection(selectedRecipientIds);
+      window.location.href = `/dashboard/preflight?batch_id=${encodeURIComponent(response.batch.id)}`;
+    } catch {
+      setPreflightNavMessage("The service could not prepare this call round. Please open Operator Panel and try again.");
+      setPreflightNavBusy(false);
+    }
+  }
 
   return (
     <main className="appShell">
@@ -175,7 +266,7 @@ export function AppShell({
         onClick={() => setOpen(false)}
       />
       <aside className={open ? "sidebar open" : "sidebar"}>
-        <a className="brand" href="/dashboard">
+        <a className="brand" href="/">
           <span className="brandMark" aria-hidden="true">
             <img alt="" height="32" src="/carecall-logo.svg" width="32" />
           </span>
@@ -185,43 +276,37 @@ export function AppShell({
           </span>
         </a>
         <nav className="nav" aria-label="CareCall navigation">
-          {navItems.map((item) => {
-            const showGroup = item.group !== lastGroup;
-            lastGroup = item.group;
-            const isUrgent = item.key === "urgent";
-            return (
-              <div className="navGroup" key={item.label}>
-                {showGroup && <span className="navLabel">{item.group}</span>}
-                <a
-                  className={`${active === item.key ? "navItem active" : "navItem"} ${isUrgent ? "urgentNavItem" : ""}`}
-                  href={item.href}
-                  onClick={() => setOpen(false)}
-                >
-                  <NavIcon name={item.icon} />
-                  <span className="navText">
-                    <span className="navTitle">{item.label}</span>
-                    {item.caption && <span className="navCaption">{item.caption}</span>}
-                  </span>
-                  {(item.badge || isUrgent) && (
-                    <span className={item.key === "orders" ? "badge readyBadge" : isUrgent ? "badge urgentBadge" : "badge"}>
-                      {isUrgent ? urgentCallbackCount : item.badge}
+          {navGroups.map((group) => (
+            <div className={`navGroup ${navGroupTone(group.group)}`} key={group.group}>
+              <span className="navLabel">{group.group}</span>
+              {group.items.map((item) => {
+                const isUrgent = item.key === "urgent";
+                return (
+                  <a
+                    className={`${active === item.key ? "navItem active" : "navItem"} ${isUrgent ? "urgentNavItem" : ""}`}
+                    href={item.href}
+                    key={item.href}
+                    onClick={item.key === "preflight" ? openPreflightFromStoredSelection : () => setOpen(false)}
+                  >
+                    <NavIcon name={item.icon} />
+                    <span className="navText">
+                      <span className="navTitle">{preflightNavBusy && item.key === "preflight" ? "Preparing..." : item.label}</span>
+                      {item.caption && <span className="navCaption">{item.caption}</span>}
                     </span>
-                  )}
-                </a>
-              </div>
-            );
-          })}
+                    {(item.badge || isUrgent) && (
+                      <span className={item.key === "orders" ? "badge readyBadge" : isUrgent ? "badge urgentBadge" : "badge"}>
+                        {isUrgent ? liveUrgentCallbackCount : item.badge}
+                      </span>
+                    )}
+                  </a>
+                );
+              })}
+            </div>
+          ))}
         </nav>
+        {preflightNavMessage ? <p className="sidebarNotice" role="alert">{preflightNavMessage}</p> : null}
         <div className="waterMark" aria-hidden="true">
           <img alt="" src="/carecall-logo.svg" />
-        </div>
-        <div className={active === "preflight" ? "roundHud hiddenOnPreflight" : "roundHud"} aria-label="Start calls">
-          <a aria-label="Start calls" className="hudButton" href="/dashboard/preflight">
-            <svg className="iconPlay" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          </a>
-          <div className="roundHudState">Start calls</div>
         </div>
         <div className="sidebarFoot">
           <div className="userChip">
@@ -239,6 +324,9 @@ export function AppShell({
         </div>
       </aside>
       <div className="mainColumn">
+        <div className="appTopControls" aria-label="Page theme controls">
+          <ThemeToggle compact />
+        </div>
         <div className="mobileBar">
           <button
             aria-label="Open navigation"
@@ -256,46 +344,7 @@ export function AppShell({
           <span>© 2026 Alex Raixon. All rights reserved.</span>
         </footer>
       </div>
-      <button
-        aria-expanded={assistantOpen}
-        aria-label="Open AI assistant"
-        className="aiFab"
-        onClick={() => setAssistantOpen((current) => !current)}
-        type="button"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 3l1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1L6.5 8.5l4.1-1.4L12 3z" />
-          <path d="M19 13l.8 2.2L22 16l-2.2.8L19 19l-.8-2.2L16 16l2.2-.8L19 13z" />
-          <path d="M5 14l.6 1.6L7 16l-1.4.4L5 18l-.6-1.6L3 16l1.4-.4L5 14z" />
-        </svg>
-      </button>
-      <aside className={assistantOpen ? "aiPanel open" : "aiPanel"} aria-label="Care Call AI assistant">
-        <div className="aiHead">
-          <div className="aiAv" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3l1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1L6.5 8.5l4.1-1.4L12 3z" />
-            </svg>
-          </div>
-          <div>
-            <h3>Care Call AI assistant</h3>
-            <p>Ready to help with the current round.</p>
-          </div>
-        </div>
-        <div className="aiMsgs">
-          <div className="msg in">
-            Hi, I can help review the current round, recipient care profiles, and service requests.
-          </div>
-        </div>
-        <div className="aiInput">
-          <input aria-label="Ask Care Call AI assistant" placeholder="Ask about this round..." />
-          <button aria-label="Send assistant message" className="aiSend" type="button">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M22 2L11 13" />
-              <path d="M22 2l-7 20-4-9-9-4 20-7z" />
-            </svg>
-          </button>
-        </div>
-      </aside>
+      <AssistantWidget />
     </main>
   );
 }

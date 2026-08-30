@@ -2,6 +2,7 @@ import type {
   ApprovalRequest,
   ApprovalResponse,
   BatchPayload,
+  CancelRunPayload,
   CallbackRequestsPayload,
   DashboardPayload,
   ExecutionRequest,
@@ -31,7 +32,7 @@ function backendApiCredential() {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH";
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
 };
 
@@ -150,6 +151,34 @@ export function getPrintOrders(): Promise<PrintOrdersPayload> {
   return requestJson<PrintOrdersPayload>("/api/orders/print");
 }
 
+export function updateServiceRequest(
+  serviceRequestId: string,
+  payload: {
+    category: string;
+    items: string[];
+    notes: string;
+    priority: string;
+    status: string;
+    operator: string;
+    reason?: string;
+  },
+): Promise<PrintOrdersPayload> {
+  return requestJson<PrintOrdersPayload>(`/api/service-requests/${encodeURIComponent(serviceRequestId)}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export function removeServiceRequest(
+  serviceRequestId: string,
+  payload: { operator: string; reason?: string },
+): Promise<PrintOrdersPayload> {
+  return requestJson<PrintOrdersPayload>(`/api/service-requests/${encodeURIComponent(serviceRequestId)}`, {
+    method: "DELETE",
+    body: payload,
+  });
+}
+
 export function getPreflight(batchId: string): Promise<PreflightPayload> {
   return requestJson<PreflightPayload>("/api/preflight", {
     method: "POST",
@@ -203,5 +232,12 @@ export function getRunResults(runId: string, payload: unknown = {}): Promise<Run
 export function importRunResult(runId: string): Promise<ImportedRunResultPayload> {
   return requestJson<ImportedRunResultPayload>(`/api/runs/${encodeURIComponent(runId)}/import`, {
     method: "POST",
+  });
+}
+
+export function cancelRun(runId: string, reason: string): Promise<CancelRunPayload> {
+  return requestJson<CancelRunPayload>(`/api/runs/${encodeURIComponent(runId)}/cancel`, {
+    method: "POST",
+    body: { reason },
   });
 }

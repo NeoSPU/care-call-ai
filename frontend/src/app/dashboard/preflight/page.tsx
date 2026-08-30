@@ -1,6 +1,6 @@
 import { AppShell } from "../../../components/AppShell";
 import { PreflightApprovalGate } from "../../../components/PreflightApprovalGate";
-import { getDashboardData, getPreflight } from "../../../lib/carecall-api";
+import { getPreflight } from "../../../lib/carecall-api";
 import { getCurrentOperatorName } from "../../../lib/current-operator";
 import { logTechnicalError } from "../../../lib/technical-log";
 import { SERVICE_DATA_ERROR } from "../../../lib/user-messages";
@@ -31,14 +31,37 @@ function ErrorPreflight() {
   );
 }
 
+function NoSelectedBatch({ operatorName }: { operatorName: string }) {
+  return (
+    <AppShell active="preflight" operatorName={operatorName}>
+      <div className="content">
+        <header className="topbar preflightTopbar">
+          <div>
+            <h1>Round preflight</h1>
+            <p>No selected call round is ready for preflight.</p>
+          </div>
+        </header>
+        <section className="section">
+          <div className="emptyState">
+            <h3>No planned calls selected</h3>
+            <p>Return to the Operator Panel, select eligible recipients, and run preflight for that exact selection.</p>
+            <a className="button" href="/dashboard/operator#call-list">Open Operator Panel</a>
+          </div>
+        </section>
+      </div>
+    </AppShell>
+  );
+}
+
 export default async function PreflightPage({ searchParams }: PreflightPageProps = {}) {
   try {
     const resolvedSearchParams = await searchParams;
-    const dashboard = await getDashboardData();
-    const batchId = resolvedSearchParams?.batch_id ?? dashboard.call_status.preflight_plans[0]?.batch_id ?? "default";
-    const preflight = await getPreflight(batchId);
-
     const operatorName = await getCurrentOperatorName();
+    const batchId = resolvedSearchParams?.batch_id;
+    if (!batchId) {
+      return <NoSelectedBatch operatorName={operatorName} />;
+    }
+    const preflight = await getPreflight(batchId);
 
     return (
       <AppShell active="preflight" operatorName={operatorName}>

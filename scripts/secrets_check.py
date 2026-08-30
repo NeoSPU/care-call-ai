@@ -2,8 +2,7 @@
 """Lightweight repository secret and real-phone scanner.
 
 The check intentionally scans tracked files only. Local runtime values such as
-CALL-E auth state, backend bearer tokens, and real phone numbers should stay
-outside git.
+CALL-E auth state or CARECALL_DEMO_MAX_PHONE should stay outside git.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ SECRET_PATTERNS = (
     (
         "Secret assignment",
         re.compile(
-            r"\b(?:TOKEN|SECRET|API_KEY|AUTH_TOKEN|ACCESS_TOKEN)\b\s*[:=]\s*['\"][A-Za-z0-9._~+/=-]{16,}['\"]",
+            r"\b(?:TOKEN|SECRET|API_KEY|AUTH_TOKEN|ACCESS_TOKEN)\b\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{16,}",
             re.IGNORECASE,
         ),
     ),

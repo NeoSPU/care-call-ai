@@ -4,6 +4,7 @@ import { getCallbackRequests } from "../../../lib/carecall-api";
 import { getCurrentOperatorName } from "../../../lib/current-operator";
 import { logTechnicalError } from "../../../lib/technical-log";
 import type { CallbackRequestsPayload } from "../../../lib/types";
+import { urgentCallbackOpenCount } from "../../../lib/urgent-callback-events";
 import { SERVICE_DATA_ERROR } from "../../../lib/user-messages";
 
 function UrgentCallbackError() {
@@ -32,9 +33,10 @@ export default async function UrgentCallbackPage() {
   }
 
   const operatorName = await getCurrentOperatorName();
+  const urgentCount = urgentCallbackOpenCount(data.callback_requests);
 
   return (
-    <AppShell active="urgent" operatorName={operatorName} urgentCallbackCount={data.summary.new}>
+    <AppShell active="urgent" operatorName={operatorName} urgentCallbackCount={urgentCount}>
       <div className="content">
         <header className="topbar">
           <div className="topbarTitle">
@@ -43,32 +45,9 @@ export default async function UrgentCallbackPage() {
           </div>
           <span className="roundPill">
             <span className="dot" />
-            {data.summary.new} new
+            {urgentCount} open
           </span>
         </header>
-
-        <section className="metrics" aria-label="Urgent callback metrics">
-          <div className="metric accentUrgent">
-            <span className="metricLabel">New requests</span>
-            <strong className="metricValue">{data.summary.new}</strong>
-            <span className="metricHint">Awaiting review</span>
-          </div>
-          <div className="metric accentReview">
-            <span className="metricLabel">In review</span>
-            <strong className="metricValue">{data.summary.in_review}</strong>
-            <span className="metricHint">Operator queue</span>
-          </div>
-          <div className="metric accentReady">
-            <span className="metricLabel">Callback approved</span>
-            <strong className="metricValue">{data.summary.callback_approved}</strong>
-            <span className="metricHint">Ready for preflight</span>
-          </div>
-          <div className="metric">
-            <span className="metricLabel">Resolved</span>
-            <strong className="metricValue">{data.summary.resolved}</strong>
-            <span className="metricHint">Closed requests</span>
-          </div>
-        </section>
 
         <UrgentCallbackClient data={data} operatorName={operatorName} />
       </div>

@@ -12,10 +12,17 @@ from typing import Iterable
 
 from .calle_execution import CallRunRecord, CallRunStatus
 from .call_planning import build_call_plan_previews
+from .daily_limits import (
+    DEFAULT_CALLBACK_CALL_LIMIT,
+    DEFAULT_OPERATOR_REPEAT_CALL_LIMIT,
+    callback_review_limit,
+    operator_repeat_call_limit,
+)
 from .domain import (
     ApprovalRecord,
     AuthorizedContact,
     CallbackRequest,
+    CallbackRequestStatus,
     CallSuitability,
     CareProfile,
     Condition,
@@ -30,13 +37,16 @@ from .domain import (
     RiskAuditEntry,
     RoundBatch,
     SafetyCategory,
+    ServiceRequestStatus,
     Severity,
     StoredCallRun,
     StoredIntakeResult,
     StoredServiceRequest,
+    initial_callback_request_status,
 )
-from .extraction import extract_intake_result
-from .routing import route_intake_result
+from .extraction import NeedCategory, extract_intake_result
+from .intake_text_extraction import prohibited_request_reason_from_any_text
+from .routing import ROUTING_RULES, route_intake_result
 from .safety import build_preflight_row, mask_phone
 from .validation import is_e164
 
@@ -167,7 +177,10 @@ CREATE TABLE IF NOT EXISTS callback_requests (
     operator TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    resolution_note TEXT NOT NULL DEFAULT ''
+    resolution_note TEXT NOT NULL DEFAULT '',
+    auto_run_id TEXT NOT NULL DEFAULT '',
+    auto_call_status TEXT NOT NULL DEFAULT '',
+    auto_call_error TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -202,6 +215,9 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "callback_requests", "operator", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "callback_requests", "updated_at", "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")
     _ensure_column(conn, "callback_requests", "resolution_note", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "callback_requests", "auto_run_id", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "callback_requests", "auto_call_status", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "callback_requests", "auto_call_error", "TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 
@@ -556,6 +572,112 @@ class Repository:
             raise KeyError(run_id)
         return _call_run_from_row(row)
 
+    def list_call_runs(self, recipient_id: str | None = None) -> tuple[StoredCallRun, ...]:
+        if recipient_id is None:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM call_runs
+                ORDER BY COALESCE(NULLIF(completed_at, ''), started_at) DESC, started_at DESC, rowid DESC
+                """
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT *
+                FROM call_runs
+                WHERE recipient_id = ?
+                ORDER BY COALESCE(NULLIF(completed_at, ''), started_at) DESC, started_at DESC, rowid DESC
+                """,
+                (recipient_id,),
+            ).fetchall()
+        return tuple(_call_run_from_row(row) for row in rows)
+
+    def list_latest_call_result_service_requests(self) -> tuple[StoredServiceRequest, ...]:
+        latest_runs_by_recipient: dict[str, StoredCallRun] = {}
+        terminal_runs_by_recipient: dict[str, list[StoredCallRun]] = {}
+        for run in self.list_call_runs():
+            if run.status not in {"completed", "failed"}:
+                continue
+            latest_runs_by_recipient.setdefault(run.recipient_id, run)
+            terminal_runs_by_recipient.setdefault(run.recipient_id, []).append(run)
+
+        if not latest_runs_by_recipient:
+            return ()
+
+        all_requests = self.list_service_requests()
+        requests: list[StoredServiceRequest] = []
+        for run in latest_runs_by_recipient.values():
+            run_day = _call_run_day(run)
+            same_day_run_ids = {
+                candidate.id
+                for candidate in terminal_runs_by_recipient.get(run.recipient_id, [])
+                if _call_run_day(candidate) == run_day
+            }
+            run_requests = [
+                request
+                for request in all_requests
+                if request.recipient_id == run.recipient_id
+                and _service_request_should_show_for_latest_call_result(
+                    request=request,
+                    latest_run_id=run.id,
+                    same_day_run_ids=same_day_run_ids,
+                    run_day=run_day,
+                )
+            ]
+            if run_requests:
+                requests.extend(run_requests)
+                continue
+            intake_result = self._intake_result_for_run(run.id)
+            prohibited_reason = prohibited_request_reason_from_any_text(_intake_policy_text(intake_result)) if intake_result else ""
+            if prohibited_reason:
+                continue
+            if intake_result is not None:
+                requests.append(_call_outcome_review_request(run, intake_result, "No practical support items were requested during the call."))
+
+        return tuple(
+            sorted(
+                requests,
+                key=lambda request: (
+                    request.recipient_id,
+                    _orderable_timestamp(request.updated_at or request.created_at),
+                    request.category,
+                    request.id,
+                ),
+            )
+        )
+
+    def _intake_result_for_run(self, run_id: str) -> StoredIntakeResult | None:
+        row = self.conn.execute("SELECT * FROM intake_results WHERE id = ?", (f"intake-{run_id}",)).fetchone()
+        if row is None:
+            return None
+        return StoredIntakeResult(
+            id=row["id"],
+            recipient_id=row["recipient_id"],
+            status=row["status"],
+            summary=row["summary"],
+            human_review=bool(row["human_review"]),
+            needs=tuple(json.loads(row["needs"])),
+        )
+
+    def cancel_call_run(self, run_id: str, reason: str = "") -> StoredCallRun:
+        run = self.get_call_run(run_id)
+        if run.status == "completed":
+            return run
+        note = reason.strip() or "Operator canceled active CareCall tracking session."
+        self.conn.execute(
+            """
+            UPDATE call_runs
+            SET status = 'canceled',
+                completed_at = CASE WHEN completed_at = '' THEN CURRENT_TIMESTAMP ELSE completed_at END,
+                error = ?
+            WHERE id = ?
+            """,
+            (note, run_id),
+        )
+        self.conn.commit()
+        return self.get_call_run(run_id)
+
     def save_run_result_bundle(self, run_id: str, payload: dict) -> dict:
         run = self.get_call_run(run_id)
         record = CallRunRecord(
@@ -645,7 +767,7 @@ class Repository:
                     request.queue,
                     request.sla_hours,
                     request.priority,
-                    request.status,
+                    request.status.value,
                     json.dumps(list(request.items)),
                     request.notes,
                     request.human_review_reason,
@@ -656,18 +778,28 @@ class Repository:
             return service_id
 
         history = _json_list(existing["update_history"])
-        if any(entry.get("run_id") == run_id for entry in history if isinstance(entry, dict)):
+        existing_items = _json_tuple(existing["items"])
+        merged_items = _merge_items(existing_items, request.items)
+        incoming_ready_with_items = request.status == ServiceRequestStatus.READY_TO_PRINT and bool(request.items)
+        release_stale_review_row = incoming_ready_with_items and str(existing["status"]) == ServiceRequestStatus.REVIEW.value
+        duplicate_import = any(entry.get("run_id") == run_id for entry in history if isinstance(entry, dict))
+        if duplicate_import and not release_stale_review_row:
             return str(existing["id"])
 
-        merged_items = _merge_items(_json_tuple(existing["items"]), request.items)
-        merged_notes = _merge_notes(existing["notes"], request.notes)
-        merged_reason = _merge_notes(existing["human_review_reason"], request.human_review_reason)
+        merged_notes = request.notes if release_stale_review_row and not existing_items else _merge_notes(existing["notes"], request.notes)
+        merged_reason = "" if incoming_ready_with_items else _merge_notes(existing["human_review_reason"], request.human_review_reason)
+        merged_status = (
+            ServiceRequestStatus.READY_TO_PRINT.value
+            if incoming_ready_with_items
+            else _merge_status(str(existing["status"]), request.status.value)
+        )
         history.append(
             {
                 "event": "updated",
                 "run_id": run_id,
                 "source": "same_day_repeat_import",
-                "added_items": [item for item in request.items if item not in _json_tuple(existing["items"])],
+                "added_items": [item for item in request.items if item not in existing_items],
+                "reprocessed": duplicate_import,
             }
         )
         self.conn.execute(
@@ -689,7 +821,7 @@ class Repository:
                 request.queue,
                 min(int(existing["sla_hours"]), request.sla_hours),
                 _merge_priority(str(existing["priority"]), request.priority),
-                _merge_status(str(existing["status"]), request.status),
+                merged_status,
                 json.dumps(list(merged_items)),
                 merged_notes,
                 merged_reason,
@@ -730,6 +862,7 @@ class Repository:
             intake_results=self.list_intake_results(),
             service_requests=self.list_service_requests(),
             callback_requests=self.list_callback_requests(),
+            call_runs=self.list_call_runs(),
         )
 
     def call_plan_previews_with_same_day_history(
@@ -743,11 +876,17 @@ class Repository:
                 preview,
                 same_day_call_count=count,
                 operator_repeat_available=count == 1,
-                operator_repeat_limit_reached=count >= 2,
-                same_day_repeat_warning=_same_day_repeat_warning(preview.recipient_label, count),
+                operator_repeat_limit_reached=count >= operator_limit,
+                same_day_repeat_warning=_same_day_repeat_warning(preview.recipient_label, count, operator_limit),
+                same_day_callback_count=callback_count,
+                callback_repeat_review_required=callback_count >= callback_limit,
+                callback_repeat_warning=_callback_repeat_warning(preview.recipient_label, callback_count, callback_limit),
             )
             for preview in previews
+            for operator_limit in (operator_repeat_call_limit(preview.recipient_id),)
+            for callback_limit in (callback_review_limit(preview.recipient_id),)
             for count in (self.count_same_day_live_calls(preview.recipient_id, call_date),)
+            for callback_count in (self.count_same_day_callback_requests(preview.recipient_id, call_date),)
         )
 
     def count_same_day_live_calls(self, recipient_id: str, call_date: str) -> int:
@@ -760,6 +899,20 @@ class Repository:
               AND started_at LIKE ?
             """,
             (recipient_id, f"{call_date}%"),
+        ).fetchone()
+        return int(row["count"] if row else 0)
+
+    def count_same_day_callback_requests(self, recipient_id: str, call_date: str) -> int:
+        row = self.conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM callback_requests
+            WHERE recipient_id = ?
+              AND created_at LIKE ?
+              AND source != 'operator_created'
+              AND status != ?
+            """,
+            (recipient_id, f"{call_date}%", CallbackRequestStatus.DISMISSED_DUPLICATE.value),
         ).fetchone()
         return int(row["count"] if row else 0)
 
@@ -779,16 +932,14 @@ class Repository:
         if priority not in {"urgent", "normal"}:
             raise ValueError("Callback priority must be urgent or normal.")
 
-        status = "operator_review"
-        if card.blocked or card.safety_category == SafetyCategory.CRITICAL or card.route != "recipient":
-            status = "operator_review"
+        status = initial_callback_request_status(source, card)
 
         request = CallbackRequest(
             id=f"cb-{uuid.uuid4().hex[:12]}",
             recipient_id=recipient.id,
             source=source,
             request_text=request_text,
-            status=status,
+            status=status.value,
             priority=priority,
             operator=operator.strip(),
             created_at="",
@@ -837,8 +988,7 @@ class Repository:
         operator: str,
         resolution_note: str = "",
     ) -> CallbackRequest:
-        if status not in {"operator_review", "approved_callback", "operator_call", "dismissed_duplicate", "resolved"}:
-            raise ValueError("Unsupported callback request status.")
+        normalized_status = _normalize_callback_request_status(status)
         self.get_callback_request(callback_id)
         self.conn.execute(
             """
@@ -846,10 +996,65 @@ class Repository:
             SET status = ?, operator = ?, resolution_note = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
-            (status, operator.strip() or DEFAULT_OPERATOR, resolution_note.strip(), callback_id),
+            (normalized_status.value, operator.strip() or DEFAULT_OPERATOR, resolution_note.strip(), callback_id),
         )
         self.conn.commit()
         return self.get_callback_request(callback_id)
+
+    def attach_callback_auto_call(
+        self,
+        callback_id: str,
+        *,
+        run_id: str = "",
+        status: str,
+        error: str = "",
+        resolution_note: str = "",
+    ) -> CallbackRequest:
+        normalized_status = _normalize_automatic_callback_status(status)
+        self.get_callback_request(callback_id)
+        self.conn.execute(
+            """
+            UPDATE callback_requests
+            SET status = ?,
+                auto_run_id = ?,
+                auto_call_status = ?,
+                auto_call_error = ?,
+                resolution_note = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                normalized_status.value,
+                run_id,
+                normalized_status.value,
+                error.strip(),
+                resolution_note.strip(),
+                callback_id,
+            ),
+        )
+        self.conn.commit()
+        return self.get_callback_request(callback_id)
+
+    def mark_callback_run_terminal(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        provider_status: str,
+        note: str = "",
+    ) -> CallbackRequest | None:
+        normalized_status = _normalize_terminal_callback_status(status)
+        row = self.conn.execute("SELECT id FROM callback_requests WHERE auto_run_id = ?", (run_id,)).fetchone()
+        if row is None:
+            return None
+        message = note.strip() or f"Automatic callback provider status: {provider_status or 'unknown'}."
+        return self.attach_callback_auto_call(
+            str(row["id"]),
+            run_id=run_id,
+            status=normalized_status.value,
+            error="" if normalized_status == CallbackRequestStatus.AUTO_CALLBACK_COMPLETED else message,
+            resolution_note=message,
+        )
 
     def get_recipient_detail(self, recipient_id: str) -> RecipientDetail:
         recipient = self.get_recipient(recipient_id)
@@ -1130,6 +1335,112 @@ class Repository:
             ).fetchall()
         return tuple(_service_request_from_row(row) for row in rows)
 
+    def update_service_request(
+        self,
+        service_request_id: str,
+        *,
+        category: str,
+        items: Iterable[str],
+        notes: str,
+        priority: str,
+        status: str,
+        operator: str = DEFAULT_OPERATOR,
+        reason: str = "",
+    ) -> StoredServiceRequest:
+        current = self._service_request_row(service_request_id)
+        normalized_category = _normalize_service_request_category(category)
+        normalized_status = _normalize_service_request_status(status)
+        normalized_priority = _normalize_service_request_priority(priority)
+        normalized_items = tuple(dict.fromkeys(item.strip() for item in items if item.strip()))
+        if normalized_status == ServiceRequestStatus.READY_TO_PRINT and not normalized_items:
+            raise ValueError("Ready-to-print service requests must include at least one item.")
+
+        queue, sla_hours = ROUTING_RULES[normalized_category]
+        history = _json_list(current["update_history"])
+        history.append(
+            {
+                "event": "operator_updated",
+                "operator": operator.strip() or DEFAULT_OPERATOR,
+                "reason": reason.strip(),
+                "category": normalized_category.value,
+                "status": normalized_status.value,
+            }
+        )
+        human_review_reason = "" if normalized_status == ServiceRequestStatus.READY_TO_PRINT else current["human_review_reason"]
+        if normalized_status == ServiceRequestStatus.REVIEW and reason.strip():
+            human_review_reason = reason.strip()
+
+        self.conn.execute(
+            """
+            UPDATE service_requests
+            SET category = ?,
+                queue = ?,
+                sla_hours = ?,
+                priority = ?,
+                status = ?,
+                items = ?,
+                notes = ?,
+                human_review_reason = ?,
+                updated_at = CURRENT_TIMESTAMP,
+                update_count = update_count + 1,
+                update_history = ?
+            WHERE id = ?
+            """,
+            (
+                normalized_category.value,
+                queue,
+                sla_hours,
+                normalized_priority,
+                normalized_status.value,
+                json.dumps(list(normalized_items)),
+                notes.strip(),
+                human_review_reason,
+                json.dumps(history),
+                service_request_id,
+            ),
+        )
+        self.conn.commit()
+        return self.get_service_request(service_request_id)
+
+    def void_service_request(
+        self,
+        service_request_id: str,
+        *,
+        operator: str = DEFAULT_OPERATOR,
+        reason: str = "",
+    ) -> StoredServiceRequest:
+        current = self._service_request_row(service_request_id)
+        history = _json_list(current["update_history"])
+        history.append(
+            {
+                "event": "operator_removed",
+                "operator": operator.strip() or DEFAULT_OPERATOR,
+                "reason": reason.strip(),
+            }
+        )
+        self.conn.execute(
+            """
+            UPDATE service_requests
+            SET status = 'void',
+                updated_at = CURRENT_TIMESTAMP,
+                update_count = update_count + 1,
+                update_history = ?
+            WHERE id = ?
+            """,
+            (json.dumps(history), service_request_id),
+        )
+        self.conn.commit()
+        return self.get_service_request(service_request_id)
+
+    def get_service_request(self, service_request_id: str) -> StoredServiceRequest:
+        return _service_request_from_row(self._service_request_row(service_request_id))
+
+    def _service_request_row(self, service_request_id: str) -> sqlite3.Row:
+        row = self.conn.execute("SELECT * FROM service_requests WHERE id = ?", (service_request_id,)).fetchone()
+        if row is None:
+            raise KeyError(service_request_id)
+        return row
+
     def _card_for_recipient(self, recipient: Recipient) -> RecipientCard:
         row = self.conn.execute(
             "SELECT safety_category, delivery_area, address, special_handling_reviewed FROM recipients WHERE id = ?",
@@ -1220,7 +1531,9 @@ class Repository:
                     request.queue,
                     request.sla_hours,
                     request.priority,
-                    "pending" if request.status == "ready_to_print" else request.status,
+                    ServiceRequestStatus.PENDING.value
+                    if request.status == ServiceRequestStatus.READY_TO_PRINT
+                    else request.status.value,
                     json.dumps(list(request.items)),
                     request.notes,
                     request.human_review_reason,
@@ -1276,7 +1589,153 @@ def _service_request_from_row(row: sqlite3.Row) -> StoredServiceRequest:
     )
 
 
-def _same_day_repeat_warning(recipient_label: str, count: int) -> str:
+def _normalize_service_request_category(value: str):
+    normalized = value.strip().lower()
+    aliases = {
+        "food": "groceries",
+        "products": "groceries",
+        "grocery": "groceries",
+        "medicine": "medication",
+        "pharmacy": "medication",
+        "prescription": "medication",
+        "services": "other",
+        "review": "other",
+    }
+    normalized = aliases.get(normalized, normalized)
+    try:
+        return NeedCategory(normalized)
+    except ValueError as exc:
+        raise ValueError(f"Unsupported service request category: {value}") from exc
+
+
+def _normalize_service_request_status(value: str) -> ServiceRequestStatus:
+    normalized = value.strip().lower()
+    if normalized not in {
+        ServiceRequestStatus.READY_TO_PRINT.value,
+        ServiceRequestStatus.REVIEW.value,
+        ServiceRequestStatus.PENDING.value,
+    }:
+        raise ValueError(f"Unsupported service request status: {value}")
+    return ServiceRequestStatus(normalized)
+
+
+def _normalize_callback_request_status(value: str) -> CallbackRequestStatus:
+    try:
+        return CallbackRequestStatus(value.strip().lower())
+    except ValueError as exc:
+        raise ValueError("Unsupported callback request status.") from exc
+
+
+def _normalize_automatic_callback_status(value: str) -> CallbackRequestStatus:
+    status = _normalize_callback_request_status(value)
+    if status not in {
+        CallbackRequestStatus.AUTO_CALLBACK_STARTED,
+        CallbackRequestStatus.AUTO_CALLBACK_COMPLETED,
+        CallbackRequestStatus.AUTO_CALLBACK_NO_CONTACT,
+        CallbackRequestStatus.AUTO_CALLBACK_FAILED,
+        CallbackRequestStatus.CALLBACK_LIMIT_REACHED,
+        CallbackRequestStatus.OPERATOR_REVIEW,
+    }:
+        raise ValueError("Unsupported automatic callback status.")
+    return status
+
+
+def _normalize_terminal_callback_status(value: str) -> CallbackRequestStatus:
+    status = _normalize_callback_request_status(value)
+    if status not in {
+        CallbackRequestStatus.AUTO_CALLBACK_COMPLETED,
+        CallbackRequestStatus.AUTO_CALLBACK_NO_CONTACT,
+        CallbackRequestStatus.AUTO_CALLBACK_FAILED,
+    }:
+        raise ValueError("Unsupported terminal callback status.")
+    return status
+
+
+def _normalize_service_request_priority(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized not in {"urgent", "normal", "review"}:
+        raise ValueError(f"Unsupported service request priority: {value}")
+    return normalized
+
+
+def _service_request_references_any_run(request: StoredServiceRequest, run_ids: set[str]) -> bool:
+    if any(request.id.startswith(f"svc-{run_id}-") for run_id in run_ids):
+        return True
+    return any(
+        isinstance(entry, dict) and str(entry.get("run_id", "")) in run_ids
+        for entry in request.update_history
+    )
+
+
+def _service_request_should_show_for_latest_call_result(
+    *,
+    request: StoredServiceRequest,
+    latest_run_id: str,
+    same_day_run_ids: set[str],
+    run_day: str,
+) -> bool:
+    if request.status == "void" or not _service_request_originates_from_call_result(request):
+        return False
+    if request.status == ServiceRequestStatus.READY_TO_PRINT.value:
+        return _service_request_is_same_day(request, run_day) or _service_request_references_any_run(
+            request,
+            same_day_run_ids,
+        )
+    return _service_request_references_any_run(request, {latest_run_id})
+
+
+def _service_request_originates_from_call_result(request: StoredServiceRequest) -> bool:
+    if request.id.startswith("svc-run-"):
+        return True
+    return any(
+        isinstance(entry, dict)
+        and str(entry.get("source", "")) in {"call_result_import", "same_day_repeat_import", "print_orders_view"}
+        for entry in request.update_history
+    )
+
+
+def _service_request_is_same_day(request: StoredServiceRequest, run_day: str) -> bool:
+    if not run_day:
+        return True
+    return request.created_at.startswith(run_day) or request.updated_at.startswith(run_day)
+
+
+def _call_run_day(run: StoredCallRun) -> str:
+    return (run.completed_at or run.started_at or "")[:10]
+
+
+def _intake_policy_text(intake_result: StoredIntakeResult) -> str:
+    return "\n".join((intake_result.summary, json.dumps(list(intake_result.needs))))
+
+
+def _call_outcome_review_request(
+    run: StoredCallRun,
+    intake_result: StoredIntakeResult,
+    reason: str,
+) -> StoredServiceRequest:
+    timestamp = run.completed_at or run.started_at
+    return StoredServiceRequest(
+        id=f"svc-{run.id}-outcome",
+        recipient_id=run.recipient_id,
+        category="other",
+        queue="coordinator_review",
+        sla_hours=8,
+        priority="review",
+        status="review",
+        items=(),
+        notes=intake_result.summary,
+        human_review_reason=reason,
+        created_at=timestamp,
+        updated_at=timestamp,
+        update_history=({"event": "call_outcome", "run_id": run.id, "source": "print_orders_view"},),
+    )
+
+
+def _orderable_timestamp(value: str) -> str:
+    return value or "0000-00-00 00:00:00"
+
+
+def _same_day_repeat_warning(recipient_label: str, count: int, limit: int = DEFAULT_OPERATOR_REPEAT_CALL_LIMIT) -> str:
     if count <= 0:
         return ""
     if count == 1:
@@ -1284,9 +1743,25 @@ def _same_day_repeat_warning(recipient_label: str, count: int) -> str:
             f"{recipient_label} has already received one live call today. "
             "A second operator-initiated call requires explicit repeat-call awareness."
         )
+    if count < limit:
+        return (
+            f"{recipient_label} has already received {count} live calls today. "
+            "Another operator-initiated call requires explicit repeat-call awareness."
+        )
     return (
         f"{recipient_label} has already received {count} live calls today. "
-        "Operator-initiated repeat calling has reached the daily limit."
+        f"Operator-initiated repeat calling has reached the daily limit of {limit}."
+    )
+
+
+def _callback_repeat_warning(recipient_label: str, count: int, limit: int = DEFAULT_CALLBACK_CALL_LIMIT) -> str:
+    if count <= 0:
+        return ""
+    if count < limit:
+        return f"{recipient_label} has requested {count} same-day callback contacts."
+    return (
+        f"{recipient_label} has requested {count} same-day callbacks. "
+        f"Automatic callback dialing is limited to {limit} recipient-triggered calls per day."
     )
 
 
@@ -1336,6 +1811,9 @@ def _callback_request_from_row(row: sqlite3.Row) -> CallbackRequest:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         resolution_note=row["resolution_note"],
+        auto_run_id=row["auto_run_id"],
+        auto_call_status=row["auto_call_status"],
+        auto_call_error=row["auto_call_error"],
     )
 
 
@@ -1376,7 +1854,11 @@ def _merge_priority(existing: str, incoming: str) -> str:
 
 
 def _merge_status(existing: str, incoming: str) -> str:
-    order = {"pending": 0, "ready_to_print": 1, "review": 2}
+    order = {
+        ServiceRequestStatus.PENDING.value: 0,
+        ServiceRequestStatus.READY_TO_PRINT.value: 1,
+        ServiceRequestStatus.REVIEW.value: 2,
+    }
     return incoming if order.get(incoming, 0) > order.get(existing, 0) else existing
 
 

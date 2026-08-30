@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from .domain import DashboardState, RecipientDetail
+from .daily_limits import callback_review_limit
+from .domain import CallbackRequestStatus, DashboardState, RecipientDetail
+from .intake_text_extraction import fallback_needs_from_text, prohibited_request_reason_from_any_text
 
 
 def dashboard_payload(state: DashboardState) -> dict:
@@ -38,6 +40,9 @@ def dashboard_payload(state: DashboardState) -> dict:
                 "operator_repeat_available": preview.operator_repeat_available,
                 "operator_repeat_limit_reached": preview.operator_repeat_limit_reached,
                 "same_day_repeat_warning": preview.same_day_repeat_warning,
+                "same_day_callback_count": preview.same_day_callback_count,
+                "callback_repeat_review_required": preview.callback_repeat_review_required,
+                "callback_repeat_warning": preview.callback_repeat_warning,
             }
             for preview in state.preflight_previews
         ],
@@ -61,7 +66,7 @@ def operations_dashboard_payload(state: DashboardState, selected_recipient_ids: 
         if _automation_status(card) in {"operator_review", "operator_only", "manual_only"}
     ]
     not_allowed = [card for card in recipients if card.blocked or _automation_status(card) == "blocked"]
-    callback_new = [request for request in state.callback_requests if request.status == "operator_review"]
+    callback_new = [request for request in state.callback_requests if _callback_request_open(request.status)]
     return {
         "service": "carecall-backend",
         "slogan": {
@@ -196,10 +201,10 @@ def print_orders_payload(state: DashboardState, include_demo_ready: bool = False
 def callback_requests_payload(requests, state: DashboardState) -> dict:
     return {
         "summary": {
-            "new": sum(1 for request in requests if request.status == "operator_review"),
-            "in_review": sum(1 for request in requests if request.status == "operator_review"),
-            "callback_approved": sum(1 for request in requests if request.status == "approved_callback"),
-            "resolved": sum(1 for request in requests if request.status == "resolved"),
+            "new": sum(1 for request in requests if request.status in CALLBACK_NEW_STATUSES),
+            "in_review": sum(1 for request in requests if request.status in CALLBACK_REVIEW_STATUSES),
+            "callback_approved": sum(1 for request in requests if request.status in CALLBACK_APPROVED_STATUSES),
+            "resolved": sum(1 for request in requests if not _callback_request_open(request.status)),
         },
         "callback_requests": [_callback_request(request, state) for request in requests],
     }
@@ -273,6 +278,30 @@ def _count_values(values) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+CALLBACK_NEW_STATUSES = {
+    CallbackRequestStatus.AUTO_CALLBACK_REQUESTED.value,
+    CallbackRequestStatus.OPERATOR_REVIEW.value,
+}
+CALLBACK_REVIEW_STATUSES = {
+    CallbackRequestStatus.OPERATOR_REVIEW.value,
+    CallbackRequestStatus.CALLBACK_LIMIT_REACHED.value,
+    CallbackRequestStatus.AUTO_CALLBACK_FAILED.value,
+}
+CALLBACK_APPROVED_STATUSES = {
+    CallbackRequestStatus.APPROVED_CALLBACK.value,
+    CallbackRequestStatus.AUTO_CALLBACK_STARTED.value,
+}
+CALLBACK_CLOSED_STATUSES = {
+    CallbackRequestStatus.RESOLVED.value,
+    CallbackRequestStatus.AUTO_CALLBACK_COMPLETED.value,
+    CallbackRequestStatus.AUTO_CALLBACK_NO_CONTACT.value,
+}
+
+
+def _callback_request_open(status: str) -> bool:
+    return status not in CALLBACK_CLOSED_STATUSES
+
+
 def _preflight_plan(plan) -> dict:
     return {
         "id": plan.id,
@@ -297,6 +326,9 @@ def _preview(preview) -> dict:
         "operator_repeat_available": preview.operator_repeat_available,
         "operator_repeat_limit_reached": preview.operator_repeat_limit_reached,
         "same_day_repeat_warning": preview.same_day_repeat_warning,
+        "same_day_callback_count": preview.same_day_callback_count,
+        "callback_repeat_review_required": preview.callback_repeat_review_required,
+        "callback_repeat_warning": preview.callback_repeat_warning,
     }
 
 
@@ -340,6 +372,7 @@ def _intake_result(result) -> dict:
 
 
 def _service_request(request) -> dict:
+    suggestion = _service_request_release_suggestion(request)
     return {
         "id": request.id,
         "recipient_id": request.recipient_id,
@@ -355,12 +388,30 @@ def _service_request(request) -> dict:
         "updated_at": request.updated_at,
         "update_count": request.update_count,
         "update_history": list(request.update_history),
+        "suggested_category": suggestion["category"],
+        "suggested_items": suggestion["items"],
     }
+
+
+def _service_request_release_suggestion(request) -> dict:
+    if request.status == "ready_to_print" or request.items:
+        return {"category": "", "items": []}
+    if prohibited_request_reason_from_any_text(request.notes):
+        return {"category": "", "items": []}
+
+    for need in fallback_needs_from_text(request.notes):
+        if need.items and need.review_state.value == "ready":
+            return {"category": need.category.value, "items": list(need.items)}
+    return {"category": "", "items": []}
 
 
 def _callback_request(request, state: DashboardState) -> dict:
     cards = {card.id: card for card in state.recipients}
     card = cards.get(request.recipient_id)
+    same_day_callback_count = _same_day_callback_count(request, state)
+    call_runs = {run.id: run for run in state.call_runs}
+    run = call_runs.get(request.auto_run_id)
+    review_limit = callback_review_limit(request.recipient_id)
     return {
         "id": request.id,
         "recipient_id": request.recipient_id,
@@ -371,14 +422,54 @@ def _callback_request(request, state: DashboardState) -> dict:
         "priority": request.priority,
         "operator": request.operator,
         "created_at": request.created_at,
+        "requested_at": request.created_at,
         "updated_at": request.updated_at,
         "resolution_note": request.resolution_note,
+        "auto_run_id": request.auto_run_id,
+        "auto_call_status": request.auto_call_status,
+        "auto_call_error": request.auto_call_error,
+        "call_started_at": run.started_at if run else "",
+        "call_completed_at": run.completed_at if run else "",
+        "provider_run_id": run.provider_run_id if run else "",
+        "provider_status": run.status if run else "",
         "safety_category": card.safety_category.value if card else "",
         "condition": card.condition.value if card else "",
         "masked_phone": card.masked_phone if card else "",
         "delivery_area": card.delivery_area if card else "",
         "blocked": card.blocked if card else True,
+        "same_day_callback_count": same_day_callback_count,
+        "callback_repeat_review_required": same_day_callback_count >= review_limit,
+        "callback_repeat_warning": _callback_repeat_warning(
+            card.display_name if card else request.recipient_id,
+            same_day_callback_count,
+            review_limit,
+        ),
     }
+
+
+def _same_day_callback_count(request, state: DashboardState) -> int:
+    request_day = str(request.created_at)[:10]
+    if not request_day:
+        return 0
+    return sum(
+        1
+        for item in state.callback_requests
+        if item.recipient_id == request.recipient_id
+        and str(item.created_at).startswith(request_day)
+        and item.source != "operator_created"
+        and item.status != CallbackRequestStatus.DISMISSED_DUPLICATE.value
+    )
+
+
+def _callback_repeat_warning(recipient_label: str, count: int, limit: int) -> str:
+    if count <= 0:
+        return ""
+    if count < limit:
+        return f"{recipient_label} has requested {count} same-day callback contacts."
+    return (
+        f"{recipient_label} has requested {count} same-day callbacks. "
+        f"Automatic callback dialing is limited to {limit} recipient-triggered calls per day."
+    )
 
 
 def _risk_audit(entry) -> dict:

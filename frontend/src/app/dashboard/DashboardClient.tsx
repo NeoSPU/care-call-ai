@@ -1,5 +1,7 @@
 "use client";
 
+import type { CSSProperties } from "react";
+
 import { AppShell } from "../../components/AppShell";
 import type { OperationsDashboardPayload } from "../../lib/types";
 
@@ -14,6 +16,82 @@ function label(value: string) {
 
 function entries(record: Record<string, number>) {
   return Object.entries(record).sort((left, right) => right[1] - left[1]);
+}
+
+function total(record: Record<string, number>) {
+  return Object.values(record).reduce((sum, value) => sum + value, 0);
+}
+
+function percentage(value: number, denominator: number) {
+  if (denominator <= 0) {
+    return 0;
+  }
+  return Math.round((value / denominator) * 100);
+}
+
+function DashboardRing({ ready, totalRecipients }: { ready: number; totalRecipients: number }) {
+  const readyPercent = percentage(ready, totalRecipients);
+  return (
+    <div
+      aria-label={`Readiness ring: ${ready} of ${totalRecipients} recipients ready for auto-call`}
+      className="dashboardRing"
+      role="img"
+      style={{ "--ring-value": `${readyPercent}%` } as CSSProperties}
+    >
+      <span>{readyPercent}%</span>
+      <small>Ready</small>
+    </div>
+  );
+}
+
+function DistributionBar({ label: barLabel, values }: { label: string; values: Record<string, number> }) {
+  const denominator = total(values);
+  return (
+    <div className="distributionBarBlock">
+      <div className="miniChartHead">
+        <h3>{barLabel}</h3>
+        <span>{denominator} total</span>
+      </div>
+      <div aria-label={`${barLabel} distribution`} className="distributionBar" role="img">
+        {entries(values).map(([key, value], index) => (
+          <span
+            className={`distributionSegment segment${index % 5}`}
+            key={key}
+            style={{ width: `${Math.max(percentage(value, denominator), value > 0 ? 5 : 0)}%` }}
+            title={`${label(key)}: ${value}`}
+          />
+        ))}
+      </div>
+      <div className="chartLegend">
+        {entries(values).map(([key, value], index) => (
+          <span key={key}>
+            <i className={`legendDot segment${index % 5}`} />
+            {label(key)} {value}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HorizontalBars({ label: chartLabel, values }: { label: string; values: Record<string, number> }) {
+  const denominator = Math.max(...Object.values(values), 1);
+  return (
+    <div aria-label={`${chartLabel} bar chart`} className="horizontalBars" role="img">
+      {entries(values).map(([key, value], index) => (
+        <div className="horizontalBarRow" key={key}>
+          <span>{label(key)}</span>
+          <div className="horizontalTrack">
+            <i
+              className={`horizontalFill segment${index % 5}`}
+              style={{ width: `${Math.max(percentage(value, denominator), value > 0 ? 8 : 0)}%` }}
+            />
+          </div>
+          <strong>{value}</strong>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function DashboardClient({ data, operatorName }: DashboardClientProps) {
@@ -31,7 +109,7 @@ export function DashboardClient({ data, operatorName }: DashboardClientProps) {
       <div className="content">
         <header className="topbar">
           <div className="topbarTitle">
-            <h1>Care seen - Dashboard</h1>
+            <h1><span className="sectionAccent seen">Care seen</span> - Dashboard</h1>
             <p>Operational visibility across recipients, safety state, care demand, and urgent callback pressure.</p>
           </div>
           <span className="roundPill">
@@ -66,43 +144,40 @@ export function DashboardClient({ data, operatorName }: DashboardClientProps) {
           </div>
         </div>
 
-        <div className="grid">
-          <section className="section">
-            <div className="sectionHeader">
+        <section className="section visualDashboard" aria-label="Care seen visual overview">
+          <div className="sectionHeader">
+            <div>
+              <h2>At-a-glance Operations</h2>
+              <p>Visual summary for readiness, safety distribution, care context, and current service demand.</p>
+            </div>
+          </div>
+          <div className="visualDashboardGrid">
+            <div className="visualPanel readinessPanel">
+              <DashboardRing
+                ready={data.summary.ready_for_auto_call}
+                totalRecipients={data.summary.registered_recipients}
+              />
               <div>
-                <h2>Safety Categories</h2>
-                <p>One source of truth for auto-call eligibility and operator routing.</p>
+                <h3>Auto-call readiness</h3>
+                <p>
+                  {data.summary.ready_for_auto_call} ready, {data.summary.operator_control_required} need operator
+                  control, {data.summary.not_allowed_for_auto_call} not allowed today.
+                </p>
               </div>
             </div>
-            <div className="qualityGateGrid">
-              {entries(data.by_safety_category).map(([key, value]) => (
-                <div className="qualityGate" key={key}>
-                  <span className="qualityGateState">{value}</span>
-                  <strong>{label(key)}</strong>
-                  <span>Recipient cards</span>
-                </div>
-              ))}
+            <div className="visualPanel">
+              <DistributionBar label="Safety categories" values={data.by_safety_category} />
             </div>
-          </section>
-
-          <section className="section">
-            <div className="sectionHeader">
-              <div>
-                <h2>Condition Mix</h2>
-                <p>Supports condition-aware scripts and routing decisions.</p>
-              </div>
+            <div className="visualPanel">
+              <h3>Condition mix</h3>
+              <HorizontalBars label="Condition mix" values={data.by_condition} />
             </div>
-            <div className="qualityGateGrid">
-              {entries(data.by_condition).map(([key, value]) => (
-                <div className="qualityGate" key={key}>
-                  <span className="qualityGateState">{value}</span>
-                  <strong>{label(key)}</strong>
-                  <span>Care profiles</span>
-                </div>
-              ))}
+            <div className="visualPanel">
+              <h3>Service demand</h3>
+              <HorizontalBars label="Service demand" values={data.by_need_category} />
             </div>
-          </section>
-        </div>
+          </div>
+        </section>
 
         <div className="grid">
           <section className="section">

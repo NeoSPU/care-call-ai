@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from app.api_models import dashboard_payload, print_orders_payload, recipient_detail_payload
 from app.calle_execution import CallRunRecord, CallRunStatus
@@ -85,6 +86,251 @@ class RepositoryProductStateTests(unittest.TestCase):
         self.assertTrue(preview["operator_repeat_available"])
         self.assertFalse(preview["operator_repeat_limit_reached"])
         self.assertIn("already received one live call today", preview["same_day_repeat_warning"])
+
+    def test_repeat_limit_can_be_raised_for_controlled_test_calls(self):
+        for index in range(2):
+            self.repo.save_call_runs(
+                plan_id=f"plan-repeat-test-{index}",
+                approval_id=f"approval-repeat-test-{index}",
+                records=[
+                    CallRunRecord(
+                        recipient_id="rec-001",
+                        idempotency_key=f"repeat-key-001-{index}",
+                        status=CallRunStatus.COMPLETED,
+                        masked_phone="+1******1001",
+                    )
+                ],
+                mode="live",
+            )
+
+        with patch.dict("os.environ", {"CARECALL_RECIPIENT_OPERATOR_CALL_LIMIT_OVERRIDES": "rec-001=3"}):
+            payload = dashboard_payload(self.repo.get_dashboard_state(date.today().isoformat()))
+
+        preview = next(item for item in payload["planned_calls"] if item["recipient_id"] == "rec-001")
+        self.assertEqual(preview["same_day_call_count"], 2)
+        self.assertFalse(preview["operator_repeat_limit_reached"])
+
+    def test_operator_can_correct_and_void_review_service_requests(self):
+        review_request = next(request for request in self.repo.list_service_requests() if request.status != "ready_to_print")
+
+        corrected = self.repo.update_service_request(
+            review_request.id,
+            category="groceries",
+            items=("1 package of bread",),
+            notes="Corrected from callback transcript.",
+            priority="urgent",
+            status="ready_to_print",
+            operator="Max Neous",
+            reason="Caller requested bread for tomorrow.",
+        )
+
+        self.assertEqual(corrected.category, "groceries")
+        self.assertEqual(corrected.items, ("1 package of bread",))
+        self.assertEqual(corrected.status, "ready_to_print")
+        self.assertEqual(corrected.human_review_reason, "")
+        self.assertEqual(corrected.update_count, review_request.update_count + 1)
+        self.assertEqual(corrected.update_history[-1]["event"], "operator_updated")
+
+        voided = self.repo.void_service_request(corrected.id, operator="Max Neous", reason="Duplicate test result.")
+
+        self.assertEqual(voided.status, "void")
+        self.assertEqual(voided.update_history[-1]["event"], "operator_removed")
+
+    def test_fresh_allowed_import_releases_existing_review_row_without_old_transcript(self):
+        self.repo.conn.execute(
+            """
+            INSERT INTO service_requests (
+                id, recipient_id, category, queue, sla_hours, priority, status,
+                items, notes, human_review_reason, created_at, updated_at, update_count, update_history
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, ?)
+            """,
+            (
+                "svc-run-old-review-1",
+                "rec-001",
+                "groceries",
+                "coordinator_review",
+                8,
+                "review",
+                "review",
+                "[]",
+                "Old callback transcript about 1 package of broth.",
+                "Need category or urgency requires coordinator review.",
+                "[]",
+            ),
+        )
+        self.repo.conn.commit()
+        run = self.repo.save_call_runs(
+            plan_id="plan-fresh-milk",
+            approval_id="approval-fresh-milk",
+            records=[
+                CallRunRecord(
+                    recipient_id="rec-001",
+                    idempotency_key="fresh-milk-key",
+                    status=CallRunStatus.RUNNING,
+                    plan_id="provider-plan-fresh-milk",
+                    run_id="provider-run-fresh-milk",
+                    masked_phone="+1******1001",
+                )
+            ],
+            mode="live",
+        )[0]
+
+        bundle = self.repo.save_run_result_bundle(
+            run.id,
+            {
+                "status": "completed",
+                "summary": (
+                    "The recipient asked for 10 cans of beer, which the agent refused. "
+                    "The recipient then asked for a bottle of milk for tomorrow."
+                ),
+            },
+        )
+
+        request = bundle["service_requests"][0]
+        self.assertEqual(request.id, "svc-run-old-review-1")
+        self.assertEqual(request.status, "ready_to_print")
+        self.assertEqual(request.items, ("a bottle of milk",))
+        self.assertEqual(request.human_review_reason, "")
+        self.assertNotIn("broth", request.notes)
+
+    def test_reimport_can_repair_stale_review_row_for_same_run(self):
+        self.repo.conn.execute(
+            """
+            INSERT INTO service_requests (
+                id, recipient_id, category, queue, sla_hours, priority, status,
+                items, notes, human_review_reason, created_at, updated_at, update_count, update_history
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, ?)
+            """,
+            (
+                "svc-run-older-review-1",
+                "rec-001",
+                "groceries",
+                "coordinator_review",
+                8,
+                "review",
+                "review",
+                "[]",
+                "Old callback transcript about 1 package of broth.",
+                "Need category or urgency requires coordinator review.",
+                '[{"event":"updated","run_id":"run-stale-same-run","source":"same_day_repeat_import"}]',
+            ),
+        )
+        self.repo.conn.execute(
+            """
+            INSERT INTO call_runs (
+                id, plan_id, approval_id, recipient_id, idempotency_key, status, mode,
+                provider_plan_id, provider_run_id, masked_phone, started_at, completed_at, error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, '', '')
+            """,
+            (
+                "run-stale-same-run",
+                "plan-stale",
+                "approval-stale",
+                "rec-001",
+                "key-stale",
+                "running",
+                "live",
+                "provider-plan-stale",
+                "provider-run-stale",
+                "+1******1001",
+            ),
+        )
+        self.repo.conn.commit()
+
+        bundle = self.repo.save_run_result_bundle(
+            "run-stale-same-run",
+            {
+                "status": "completed",
+                "summary": (
+                    "The recipient asked for 10 cans of beer, which the agent refused. "
+                    "The recipient then asked for a bottle of milk for tomorrow."
+                ),
+            },
+        )
+
+        request = bundle["service_requests"][0]
+        self.assertEqual(request.id, "svc-run-older-review-1")
+        self.assertEqual(request.status, "ready_to_print")
+        self.assertEqual(request.items, ("a bottle of milk",))
+        self.assertEqual(request.human_review_reason, "")
+        self.assertNotIn("broth", request.notes)
+        self.assertTrue(request.update_history[-1]["reprocessed"])
+
+    def test_callback_grocery_addition_keeps_existing_same_day_cleaning_order_in_print_view(self):
+        cleaning_run = self.repo.save_call_runs(
+            plan_id="plan-filming-cleaning",
+            approval_id="approval-filming-cleaning",
+            records=[
+                CallRunRecord(
+                    recipient_id="rec-001",
+                    idempotency_key="filming-cleaning-key",
+                    status=CallRunStatus.RUNNING,
+                    plan_id="provider-plan-filming-cleaning",
+                    run_id="provider-run-filming-cleaning",
+                    masked_phone="+1******1001",
+                )
+            ],
+            mode="live",
+        )[0]
+        self.repo.save_run_result_bundle(
+            cleaning_run.id,
+            {
+                "status": "completed",
+                "needs": [
+                    {
+                        "category": "cleaning",
+                        "items": ["flat cleaning"],
+                        "urgency": "tomorrow",
+                        "notes": "Requested during the first filming call.",
+                    }
+                ],
+            },
+        )
+        callback_run = self.repo.save_call_runs(
+            plan_id="plan-filming-callback",
+            approval_id="approval-filming-callback",
+            records=[
+                CallRunRecord(
+                    recipient_id="rec-001",
+                    idempotency_key="filming-callback-key",
+                    status=CallRunStatus.RUNNING,
+                    plan_id="provider-plan-filming-callback",
+                    run_id="provider-run-filming-callback",
+                    masked_phone="+1******1001",
+                )
+            ],
+            mode="live",
+        )[0]
+
+        self.repo.save_run_result_bundle(
+            callback_run.id,
+            {
+                "status": "completed",
+                "needs": [
+                    {
+                        "category": "groceries",
+                        "items": ["1 pack of porridge", "1 carton of oat milk", "1 pack of eggs"],
+                        "urgency": "tomorrow",
+                        "notes": "Added during the urgent callback.",
+                    }
+                ],
+            },
+        )
+
+        rec_requests = [
+            request
+            for request in self.repo.list_latest_call_result_service_requests()
+            if request.recipient_id == "rec-001"
+        ]
+        by_category = {request.category: request for request in rec_requests}
+
+        self.assertEqual(by_category["cleaning"].items, ("flat cleaning",))
+        self.assertEqual(
+            by_category["groceries"].items,
+            ("1 pack of porridge", "1 carton of oat milk", "1 pack of eggs"),
+        )
+        self.assertEqual(by_category["cleaning"].status, "ready_to_print")
+        self.assertEqual(by_category["groceries"].status, "ready_to_print")
 
 
 class ApiModelProductStateTests(unittest.TestCase):

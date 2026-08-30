@@ -13,6 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Callable
 
+from .agent_skills.practical_support import PRACTICAL_SUPPORT_SKILL
 from .approval import OperatorApproval, validate_operator_approval
 from .call_planning import CallPlanPreview
 from .calle_developer_api import developer_api_enabled, developer_api_runner_from_env
@@ -71,6 +72,26 @@ def execute_approved_previews(
     return ExecutionBatch(records=records)
 
 
+def execute_callback_preview(
+    preview: CallPlanPreview,
+    readiness: CalleReadiness,
+    runner: ExecutionRunner | None = None,
+) -> ExecutionBatch:
+    """Place one recipient-triggered callback after backend validation.
+
+    This path intentionally skips the operator approval object because the
+    callback request is authenticated with a recipient-scoped token before this
+    function is called. It still requires CALL-E readiness and a ready preview.
+    """
+    if not readiness.ready:
+        return ExecutionBatch(records=(), blocked_reasons=("CALL-E readiness check is not passing.",))
+    if not preview.ready:
+        return ExecutionBatch(records=(), blocked_reasons=("Callback recipient is not eligible for automatic calling.",))
+
+    runner = default_execution_runner() if runner is None else runner
+    return ExecutionBatch(records=(_execute_single_preview(preview, runner),))
+
+
 def fetch_call_result(run_id: str, runner: ExecutionRunner | None = None) -> dict:
     runner = default_execution_runner() if runner is None else runner
     result = runner(("calle", "get_call_run", run_id), SAFE_CALLE_ENV)
@@ -90,21 +111,22 @@ def live_task_for_preview(preview: CallPlanPreview) -> str:
     if preview.same_day_call_count > 0:
         instructions.append(
             "This is a same-day follow-up call. Politely say the recipient was already contacted today, "
-            "then ask whether they want to update the previous request or add new groceries, medicines, "
-            "transport, companionship, cleaning, repairs, or other practical support needs."
+            "then ask whether they want to update the previous request or add "
+            f"{PRACTICAL_SUPPORT_SKILL.repeat_update_options_text()}."
         )
     style = _compact_style(goal.communication_style)
     if style:
-        instructions.append("Communication style: " + "; ".join(style) + ".")
-    if goal.allowed_questions:
-        instructions.append("Ask: " + " ".join(goal.allowed_questions[:3]))
+        instructions.append("Style: warm, concise; one question at a time.")
+    instructions.append(
+        "Ask about groceries, medication, cleaning, transport, companionship, repairs, documents, or other support; confirm urgency."
+    )
+    instructions.extend(PRACTICAL_SUPPORT_SKILL.explicit_need_rules)
+    instructions.extend(PRACTICAL_SUPPORT_SKILL.quantity_capture_rules)
     instructions.extend(
         [
-            "Capture practical needs only when speaker-confirmed; never turn your own examples into orders.",
-            "Confirm quantities, package sizes, and urgency.",
-            "Do not provide medical, legal, financial, password, payment, or emergency advice.",
-            "If the person sounds unsafe, distressed, or in immediate danger, stop intake and mark human review.",
-            "End politely with a personalized goodbye when the speaker name is known.",
+            "No medical, legal, financial, password, payment, or emergency advice.",
+            "If unsafe, distressed, or in immediate danger, stop and mark human review.",
+            "End with a personalized goodbye when the speaker name is known.",
         ]
     )
     return " ".join(_trim_sentence(item) for item in instructions if item.strip())

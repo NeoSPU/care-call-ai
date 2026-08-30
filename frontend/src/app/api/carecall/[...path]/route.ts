@@ -50,3 +50,7 @@ export function POST(request: NextRequest, context: RouteContext) {
 export function PATCH(request: NextRequest, context: RouteContext) {
   return proxyJson(request, context);
 }
+
+export function DELETE(request: NextRequest, context: RouteContext) {
+  return proxyJson(request, context);
+}

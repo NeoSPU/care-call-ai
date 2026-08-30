@@ -1,10 +1,8 @@
 # Care Call AI
 
-[![CI](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml)
-
 Care Call AI is a condition-aware CALL-E app for charities and care support teams.
 
-It helps coordinators safely prepare outreach rounds, review the planned call list, place a small approved CALL-E batch, and turn phone conversations into practical service requests and printable delivery orders.
+It helps coordinators safely prepare outreach rounds, run no-call preflight, place a small approved CALL-E batch, and turn phone conversations into practical service requests and printable delivery orders.
 
 ## Product Promise
 
@@ -14,41 +12,6 @@ It helps coordinators safely prepare outreach rounds, review the planned call li
 - **Needs heard** - the operator panel prepares the approved auto-call batch and keeps critical/operator-only recipients out of unattended automation.
 - **Help delivered** - call outcomes become structured service requests and printable fulfilment orders.
 - **Urgent Callback** - recipient-triggered callback requests appear in a separate priority queue. This is urgent support callback handling, not an emergency medical service.
-
-## Live Demo And Links
-
-- Functional demo app: https://care.alexraixon.com
-- Demo video: `<add YouTube or Vimeo URL>`
-- CALL-E contribution PR: `<add CALLE-AI/awesome-phone-call-agents PR URL>`
-- Devpost project: `<add Devpost URL>`
-- LinkedIn post: `<add LinkedIn URL>`
-- X / Twitter post: `<add X URL>`
-- Hackathon Discord post: `<add Discord thread/message URL if available>`
-
-## Architecture
-
-```mermaid
-flowchart LR
-    Coordinator["Coordinator browser"] --> Frontend["Next.js coordinator console"]
-    Frontend --> Proxy["Protected server-side API proxy"]
-    Proxy --> Backend["Python backend API"]
-    Backend --> Store["Fictional demo data / local app state"]
-    Backend --> Preflight["Operator preflight and approval gates"]
-    Preflight --> Calle["CALL-E runtime"]
-    Calle --> Recipient["Consented recipient or trusted answerer"]
-    Calle --> Results["Call result, summary, transcript evidence"]
-    Results --> Requests["Structured service requests"]
-    Requests --> Orders["Printable delivery / service orders"]
-```
-
-```mermaid
-flowchart TD
-    Seen["Care seen: readiness and safety dashboard"] --> Heard["Needs heard: operator reviews the call round"]
-    Heard --> Gate["Planned-call review and exact approval"]
-    Gate --> Call["Guarded CALL-E call path"]
-    Call --> Delivered["Help delivered: service requests and printable orders"]
-    Heard --> Urgent["Urgent Callback queue"]
-```
 
 ## Why This Exists
 
@@ -61,19 +24,15 @@ Care Call AI uses CALL-E inside a safer workflow:
 - recipient safety categories;
 - condition-aware call goals;
 - trusted answerers;
-- planned-call preflight;
+- no-call preflight;
 - exact approval before live calls;
 - structured service request generation.
 
 ## Screens
 
-- `/` - branded public entry page with login, support, and legal links.
-- `/privacy` - public privacy policy.
-- `/terms` - public terms and conditions.
-- `/support` - public support form with server-side validation and anti-abuse controls.
 - `/dashboard` - Care seen statistics.
 - `/dashboard/operator` - Needs heard auto-call round preparation.
-- `/dashboard/preflight` - planned calls and approval gate.
+- `/dashboard/preflight` - no-call preflight and approval gate.
 - `/dashboard/urgent-callback` - priority callback queue.
 - `/dashboard/recipients` - recipient cards.
 - `/dashboard/orders/print` - Help delivered summary and printable orders.
@@ -83,269 +42,105 @@ Care Call AI uses CALL-E inside a safer workflow:
 The project is safe by default:
 
 - tests use fake CALL-E runners;
-- preflight review places zero calls until the operator completes the frontend approval gate;
-- live calls require CALL-E readiness, one-recipient batch size, the current
-  approval keyset, four UI confirmations, and the exact authorization phrase;
+- no-call preflight places zero calls;
+- live calls are disabled unless explicitly enabled;
 - maximum live batch size is `1`;
 - real phones are not committed;
 - protected backend calls require a bearer token;
 - browser code does not receive backend credentials.
 
-## One-Time Configuration
-
-Docker Compose reads `.env` automatically. Create it once:
-
-```bash
-cp .env.example .env
-```
-
-For a local UI-only demo, the defaults are enough. For a real approved CALL-E
-demo, fill the backend and CALL-E secrets in `.env` before starting the stack:
-
-```text
-CARECALL_BACKEND_API_TOKEN=...
-CARECALL_OPERATOR_USERNAME=carecall-coordinator
-CARECALL_OPERATOR_PASSWORD=...
-CARECALL_AUTH_SECRET=...
-CARECALL_MAX_LIVE_BATCH_SIZE=1
-CARECALL_CALLE_PROVIDER=api
-CARECALL_CALLE_API_KEY=...
-CARECALL_CALLE_API_BASE_URL=https://api.heycall-e.com
-CARECALL_CALLE_REGION=GB
-```
-
-`CARECALL_CALLE_API_KEY` is the official CALL-E dashboard API key. Keep it only
-in backend `.env` or hosted backend secrets. Do not expose CALL-E credentials to
-browser code and do not commit `.env`.
-
-The support form is optional for local demo use. To forward support messages to
-an email/webhook provider, configure these server-side values in `.env` or your
-hosting platform secrets:
-
-```text
-CARECALL_SUPPORT_EMAIL_ENDPOINT=...
-CARECALL_SUPPORT_EMAIL_TOKEN=...
-```
-
-If no support endpoint is configured, the form still validates and accepts the
-message locally without sending email. Never expose support-mail credentials to
-browser code.
-
 ## Local Run
 
-Terminal 1 - start the backend API in Docker:
+Copy the env example if needed:
+
+```bash
+cp .env.example .env.local
+```
+
+Fill the required backend, operator, and optional CALL-E values in `.env.local`.
+The Docker backend and local Next.js dev server both load this file without
+printing secret values.
+
+Start the backend in Docker:
 
 ```bash
 make demo-up
 ```
 
-Docker stores the local SQLite app state in the `carecall_runtime` volume, so a
-normal `make demo-down && make demo-up` keeps recipient-card edits such as the
-approved test phone number. Remove that volume only when you intentionally want
-a fresh seed dataset.
+In another terminal, verify the backend:
 
-Terminal 2 - start the frontend locally:
+```bash
+make demo-smoke
+```
+
+Start the frontend locally in a second terminal:
 
 ```bash
 npm --prefix frontend install
-python3 scripts/run_frontend_from_env.py
+npm --prefix frontend run dev
 ```
 
 Open:
 
 ```text
-http://localhost:3000/dashboard
+http://localhost:3000
 ```
 
-Login uses the values from `.env`. With the sample file:
+Default local demo login:
 
 ```text
 operator: carecall-coordinator
 password: carecall-demo-password
 ```
 
-Use port `3000` for the local frontend and `8000` for the Docker backend.
+Use port `3000` for the frontend and `8000` for the backend in the public demo
+repository.
 
-## Clean-Room Live-Call Verification
+## Environment Variables And Secret Placement
 
-Use this flow when you want to verify the full public repository path from a
-fresh checkout: backend in Docker, frontend running locally, and one real
-CALL-E call started only through the frontend approval UI.
+Use `.env.local` for local development. For hosted deployments, place the same
+values in the secret manager or environment variable settings of the relevant
+runtime. Do not commit real values.
 
-Prerequisites:
-
-- Docker Desktop is running.
-- Node.js and npm are installed.
-- You have a CALL-E account and a dashboard API key.
-- You have consent or an approved outreach basis for the test phone number.
-
-### 1. Clone
-
-```bash
-git clone https://github.com/NeoSPU/care-call-ai.git
-cd care-call-ai
-```
-
-### 2. Create `.env`
-
-```bash
-cp .env.example .env
-```
-
-Open `.env` in your editor and fill the values there. Do not paste secrets into
-terminal prompts and do not export them in shell history.
-
-```bash
-nano .env
-```
-
-For a real live-call verification, `.env` must contain:
+Backend runtime only:
 
 ```text
-CARECALL_BACKEND_API_TOKEN=<long random backend bearer token>
-CARECALL_OPERATOR_USERNAME=carecall-coordinator
-CARECALL_OPERATOR_PASSWORD=<operator login password>
-CARECALL_AUTH_SECRET=<long random frontend session signing secret>
-CARECALL_API_BASE_URL=http://127.0.0.1:8000
-CARECALL_MAX_LIVE_BATCH_SIZE=1
+CARECALL_BACKEND_API_TOKEN=<long shared frontend-to-backend bearer token>
 CARECALL_CALLE_PROVIDER=api
-CARECALL_CALLE_API_KEY=<CALL-E dashboard API key>
 CARECALL_CALLE_API_BASE_URL=https://api.heycall-e.com
+CARECALL_CALLE_API_KEY=<official CALL-E dashboard Access Key>
 CARECALL_CALLE_REGION=GB
 CARECALL_CALLE_TIMEOUT_SECONDS=45
+CARECALL_LIVE_CALLS_ENABLED=true
+CARECALL_MAX_LIVE_BATCH_SIZE=1
 ```
 
-Use the API key from the CALL-E dashboard. The public demo does not require
-CALL-E CLI authorization or local token-cache copying.
-
-You can generate non-CALL-E local secrets and copy them into `.env`:
-
-```bash
-openssl rand -hex 32
-```
-
-Check that `.env` exists and is ignored by git:
-
-```bash
-test -f .env
-git check-ignore .env
-```
-
-The second command should print `.env`.
-
-### 3. Start Backend In Docker
-
-Use one terminal for the backend:
-
-```bash
-make demo-up
-```
-
-In a second terminal, verify the backend. This reads the bearer token from
-`.env` and does not print it:
-
-```bash
-cd care-call-ai
-curl -fsS http://127.0.0.1:8000/health
-python3 - <<'PY'
-from pathlib import Path
-import json
-import urllib.request
-
-env = {}
-for line in Path(".env").read_text().splitlines():
-    if "=" in line and not line.lstrip().startswith("#"):
-        key, value = line.split("=", 1)
-        env[key] = value
-
-request = urllib.request.Request(
-    "http://127.0.0.1:8000/api/dashboard",
-    headers={"Authorization": "Bearer " + env["CARECALL_BACKEND_API_TOKEN"]},
-)
-with urllib.request.urlopen(request, timeout=10) as response:
-    payload = json.loads(response.read().decode("utf-8"))
-print(json.dumps(payload["summary"], indent=2))
-PY
-```
-
-### 4. Start Frontend Locally
-
-Use another terminal for the frontend:
-
-```bash
-cd care-call-ai
-npm --prefix frontend install
-python3 scripts/run_frontend_from_env.py
-```
-
-Open:
+Frontend server runtime only:
 
 ```text
-http://127.0.0.1:3000/dashboard
+CARECALL_API_BASE_URL=https://<your-backend-origin>
+CARECALL_BACKEND_API_TOKEN=<same bearer token configured in the backend>
+CARECALL_OPERATOR_USERNAME=<operator username>
+CARECALL_OPERATOR_PASSWORD=<operator password>
+CARECALL_AUTH_SECRET=<long random cookie/session signing secret>
+CARECALL_SIRI_CALLBACK_TOKENS=rec-001=<recipient callback token>
 ```
 
-Use the operator username and password you placed in `.env`.
+Optional frontend server runtime variables:
 
-Do not authorize real calls in the terminal. The only live-call authorization is
-inside the frontend: four checkboxes plus the exact phrase.
-
-### 5. Place One Real CALL-E Call From The UI
-
-Do not call backend execution endpoints manually and do not authorize calls in
-the terminal. Use the app:
-
-1. Log in.
-2. Open `/dashboard/recipients`.
-3. Open the recipient card for the approved test participant, for example
-   `Max Neous`.
-4. Replace the fictional phone with the approved real E.164 phone number and
-   save the card.
-5. Open `/dashboard/operator`.
-6. Select exactly one eligible recipient.
-7. Click the button that opens/runs preflight.
-8. On `/dashboard/preflight`, confirm the list contains exactly one ready call.
-9. Click `Start calls`.
-10. In the Approval Gate modal, check all four live confirmations.
-11. Type exactly:
-
-   ```text
-   EXECUTE LIVE CALLS
-   ```
-
-12. Click `Start calls now` from the frontend modal.
-13. Keep the call progress modal open while CALL-E processes the call.
-14. When the result is ready, the app imports it and shows the generated order
-    count.
-15. Open `/dashboard/orders/print` to verify whether service requests/orders
-    were created from the imported result.
-
-### 6. Stop The Local Verification Stack
-
-```bash
-make demo-down
+```text
+CH_RAIXON_ENABLED=false
+CH_RAIXON_API_URL=<assistant API URL if enabled>
+CH_RAIXON_SERVICE_TOKEN=<assistant service token if enabled>
+CARECALL_SUPPORT_EMAIL_ENDPOINT=<server-side support delivery endpoint>
+CARECALL_SUPPORT_EMAIL_TOKEN=<server-side support delivery token>
+CARECALL_SUPPORT_RATE_LIMIT_KEY_SECRET=<long random rate-limit secret>
 ```
 
-Stop the local frontend terminal with `Ctrl-C`.
-
-## Live CALL-E Flow
-
-Real calls are started only from the app:
-
-1. Open `/dashboard/operator`.
-2. Select exactly one approved, non-critical recipient.
-3. Run preflight.
-4. On `/dashboard/preflight`, review `Planned calls` and remove any recipient
-   that should not be called.
-5. Click `Start calls`.
-6. In the Approval Gate modal, check all four confirmations.
-7. Type the exact phrase `EXECUTE LIVE CALLS`.
-8. Click `Start calls now`.
-9. Use the progress modal to follow submitted, completed, waiting, and imported
-   result status.
-10. When service requests/orders are created, open `/dashboard/orders/print`.
-
-Do not run real outbound calls from ad hoc terminal commands. The terminal is
-only for one-time `.env` setup and starting the app.
+Never place backend tokens, CALL-E keys, assistant service tokens, or support
+delivery tokens in variables prefixed with `NEXT_PUBLIC_` or `VITE_`. Browser
+code must call same-origin frontend routes only; those routes attach server-side
+credentials when talking to protected backend services.
 
 ## Tests
 
@@ -362,12 +157,73 @@ make backend-test
 make frontend-test
 make frontend-build
 make secrets-check
-make final-readiness
 ```
 
-## Final Real Call Safety
+## CALL-E Readiness
 
-Before any real call, confirm consent, answerer identity, route, selected recipient, participant comfort, and the exact frontend approval gate. Stop if any of those checks are uncertain.
+Configure the official CALL-E dashboard Access Key once in `.env.local`:
+
+```bash
+CARECALL_CALLE_PROVIDER=api
+CARECALL_CALLE_API_BASE_URL=https://api.heycall-e.com
+CARECALL_CALLE_API_KEY=<official CALL-E dashboard Access Key>
+CARECALL_CALLE_REGION=GB
+CARECALL_CALLE_TIMEOUT_SECONDS=45
+```
+
+Do not run real outbound calls from ad hoc CLI commands. In Care Call AI, real
+calls must go through the guarded browser workflow: Operator Panel selection,
+Round preflight, four confirmation checkboxes, and the exact authorization
+phrase shown in the UI.
+
+## Generic Deployment Notes
+
+The public demo can be deployed on any standard web and container platform:
+
+1. Build and run the Python backend container.
+2. Expose the backend through HTTPS.
+3. Configure the backend runtime secrets listed above.
+4. Deploy the Next.js frontend as a server-rendered app.
+5. Configure the frontend server runtime secrets listed above.
+6. Set the frontend `CARECALL_API_BASE_URL` to the HTTPS backend origin.
+7. Confirm that unauthenticated backend API requests return `401`.
+8. Confirm that authenticated frontend proxy requests return dashboard data.
+9. Run the no-call smoke checks before any live CALL-E call.
+
+For a scalable production shape, use a protected backend API behind HTTPS, a
+durable database, queue workers for retries and busy recipients, and a load
+balancer in front of horizontally scalable services. The public repository does
+not include provider-specific cluster scripts or private infrastructure notes.
+
+## Siri Callback MVP
+
+Apple Shortcuts can submit a recipient-triggered callback request to:
+
+```text
+POST https://<your-carecall-frontend-domain>/api/callback-requests
+Authorization: Bearer <recipient-callback-token>
+Content-Type: application/json
+```
+
+Map recipient callback tokens in the Next.js server environment only:
+
+```text
+CARECALL_SIRI_CALLBACK_TOKENS=rec-001=<recipient-callback-token>
+```
+
+After frontend token validation, the protected backend starts an immediate
+CALL-E callback for eligible recipients and records the linked run in the
+Urgent Callback queue. The MVP default is no more than three automatic
+recipient-triggered callbacks per recipient per day. It is not an emergency
+medical service.
+
+## Final Real Call
+
+For final approved demos only, edit the test recipient card in the browser,
+enter the consented phone number, select only that eligible recipient, run Round
+preflight, complete every approval checkbox, type the authorization phrase shown
+in the UI, and start the call from the browser. Stop if consent, answerer
+identity, route, keyset, or participant comfort is uncertain.
 
 ## Hackathon Submission
 
@@ -377,7 +233,11 @@ CALL-E contribution material:
 contribution/awesome-phone-call-agents/
 ```
 
-Suggested contribution area: `Apps`.
+Suggested contribution areas:
+
+- `Apps` for the full Care Call AI operator workflow.
+- `Agent Skills` for the reusable CareCall intake skill in
+  `agent-skills/carecall-intake/SKILL.md`.
 
 ## Public Safety Note
 

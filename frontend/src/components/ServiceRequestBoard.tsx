@@ -7,11 +7,16 @@ const lanes = [
   { key: "ready_to_print", title: "Ready To Print" },
 ] as const;
 
+type ServiceRequestLaneKey = typeof lanes[number]["key"];
+type GroupedServiceRequests = Record<ServiceRequestLaneKey, ServiceRequestDto[]>;
+
 type ServiceRequestBoardProps = {
   serviceRequests: ServiceRequestDto[];
 };
 
 export function ServiceRequestBoard({ serviceRequests }: ServiceRequestBoardProps) {
+  const requestsByLane = groupServiceRequestsByLane(serviceRequests);
+
   return (
     <section className="section">
       <div className="sectionHeader">
@@ -30,15 +35,16 @@ export function ServiceRequestBoard({ serviceRequests }: ServiceRequestBoardProp
         </div>
       )}
       <div className="requestBoard">
-        {lanes.map((lane) => (
-          <div className="lane" key={lane.key}>
-            <h3>{lane.title}</h3>
-            {serviceRequests.filter((request) => request.status === lane.key).length === 0 && (
-              <p className="muted">No service requests in this lane</p>
-            )}
-            {serviceRequests
-              .filter((request) => request.status === lane.key)
-              .map((request) => (
+        {lanes.map((lane) => {
+          const laneRequests = requestsByLane[lane.key];
+
+          return (
+            <div className="lane" key={lane.key}>
+              <h3>{lane.title}</h3>
+              {laneRequests.length === 0 && (
+                <p className="muted">No service requests in this lane</p>
+              )}
+              {laneRequests.map((request) => (
                 <article className="requestCard" key={request.id}>
                   <div className="requestTop">
                     <strong>{request.recipient_name ?? request.recipient_id}</strong>
@@ -60,9 +66,30 @@ export function ServiceRequestBoard({ serviceRequests }: ServiceRequestBoardProp
                   {request.human_review_reason && <p>{request.human_review_reason}</p>}
                 </article>
               ))}
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
+}
+
+function groupServiceRequestsByLane(serviceRequests: ServiceRequestDto[]): GroupedServiceRequests {
+  return serviceRequests.reduce<GroupedServiceRequests>(
+    (groups, request) => {
+      if (isServiceRequestLaneKey(request.status)) {
+        groups[request.status].push(request);
+      }
+      return groups;
+    },
+    {
+      pending: [],
+      ready_to_print: [],
+      review: [],
+    },
+  );
+}
+
+function isServiceRequestLaneKey(status: string): status is ServiceRequestLaneKey {
+  return lanes.some((lane) => lane.key === status);
 }

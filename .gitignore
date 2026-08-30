@@ -9,5 +9,15 @@ __pycache__/
 .env.*
 !.env.example
 .DS_Store
+.skills
 data/*.sqlite3
 npm-debug.log*
+*.tsbuildinfo
+
+# Local generated public hackathon repo/export candidates.
+/care-call-ai-demo/
+/care-call-ai-demo-public/
+/public-repo/
+/public-repos/
+/.local-public-export/
+/awesome-phone-call-agents/
