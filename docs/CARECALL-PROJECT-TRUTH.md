@@ -102,6 +102,29 @@ human under the organization's own safeguarding and emergency procedures.
    prepares coordinator-reviewed requests and printable handoff sheets for the
    organization or its delivery and volunteer teams.
 
+## Assistant knowledge scopes
+
+The assistant on `alexraixon.com` is Alex Raixon's main portfolio assistant.
+Its knowledge covers Alex's professional background, experience, capabilities,
+writing, collaboration context, and approved summaries of every showcased
+project. It therefore includes the canonical CareCall summary as one project
+inside the wider portfolio knowledge base.
+
+CareCall application, landing, and demo surfaces use the project-specific
+`carecall` assistant identity. That assistant contains CareCall product,
+workflow, feature, safety, and approved marketing knowledge only. It must not
+load Alex's full background, unrelated portfolio projects, or another
+project's knowledge pack.
+
+`care.alexraixon.com` and `about.care.alexraixon.com` are different frontend
+surfaces of the same CareCall project identity and must use the same canonical
+CareCall facts. The shared `ch-raixon` codebase is a runtime reused by separate
+deployments; it is not one shared assistant memory. Public knowledge boundaries
+are defined in `docs/ASSISTANT-SCOPE.md` where that sanitized mirror is present.
+Private tenant, namespace, knowledge-pack, ingress, and Helm-release mapping is
+defined only in the canonical shared-runtime registry and authorized private
+mirrors.
+
 ## Project repository map and downstream runtime
 
 | Role | Repository | Public domain | Truth-file role |
