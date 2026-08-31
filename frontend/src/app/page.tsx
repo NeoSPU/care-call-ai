@@ -39,7 +39,7 @@ export default async function Home() {
         <h1 className="wordmark" id="landing-title"><span>Care Call AI</span></h1>
         <p className="srOnly">Care seen. Needs heard. Help delivered.</p>
         <p className="landingLead">
-          Condition-aware CALL-E check-ins that help coordinators turn real conversations into practical care requests.
+          Approved CALL-E check-ins that turn beneficiary conversations into practical support requests.
         </p>
 
         <div className="ctaRow" aria-label="Primary actions">

@@ -2,10 +2,11 @@
 
 ## Summary
 
-Adds Care Call AI, a condition-aware care outreach app for safe CALL-E rounds.
-Care Call AI helps coordinators prepare approved call batches, run no-call
-preflight, place a small guarded CALL-E batch, and turn conversations into
-practical service requests and printable delivery orders.
+Adds Care Call AI, a practical support outreach and fulfilment coordination app
+for charities and non-clinical support organizations. Care Call AI helps
+coordinators prepare approved beneficiary call batches, run no-call preflight,
+place a small guarded CALL-E batch, and turn explicit everyday needs from
+conversations into reviewed support requests and printable delivery orders.
 
 Suggested contribution areas: `Apps` and `Agent Skills`.
 
@@ -73,5 +74,6 @@ make secrets-check
 
 ## Notes
 
-Care Call AI is an intake and dispatch layer. It is intentionally not a CRM
-replacement, medical device, emergency service, or clinical decision system.
+Care Call AI is a practical-support outreach and handoff layer. It is not a
+medical, healthcare, clinical, patient-care, hospital, emergency-service, or
+emergency-response product.

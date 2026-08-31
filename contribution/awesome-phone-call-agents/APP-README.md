@@ -1,11 +1,12 @@
 # Care Call AI
 
-Care Call AI is a condition-aware CALL-E user-facing app for charities and care
-support teams.
+Care Call AI is a practical support outreach and fulfilment coordination app
+for charities and non-clinical support organizations, built with CALL-E.
 
-It helps coordinators safely prepare outreach rounds, run no-call preflight,
-place a small approved CALL-E batch, and turn phone conversations into practical
-service requests and printable delivery orders.
+It helps coordinators prepare approved beneficiary outreach rounds, run no-call
+preflight, place a small approved CALL-E batch, and turn explicit everyday
+needs from phone conversations into coordinator-reviewed practical support
+requests and printable delivery orders.
 
 Product promise:
 
@@ -158,7 +159,7 @@ The reusable intake skill is in:
 agent-skills/carecall-intake/SKILL.md
 ```
 
-It defines the call behavior that prevents common care-intake mistakes:
+It defines the call behavior that prevents common practical-support intake mistakes:
 
 - collect only needs explicitly requested or confirmed by the recipient or
   authorized answerer;

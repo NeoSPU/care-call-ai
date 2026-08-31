@@ -3,8 +3,9 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Care Call AI - Daily Round Control",
-  description: "Condition-aware CALL-E care intake dashboard",
+  title: "Care Call AI - Beneficiary Outreach & Practical Support Coordination",
+  description:
+    "Approved CALL-E check-ins that turn beneficiary conversations into coordinator-reviewed practical support requests.",
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },

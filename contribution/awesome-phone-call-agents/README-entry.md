@@ -3,13 +3,13 @@
 Suggested row for the `apps/` table:
 
 ```markdown
-| [Care Call AI](apps/typescript/care-call-ai/) | TypeScript + Python | Condition-aware care outreach app for safe CALL-E rounds, with no-call preflight, operator approval gates, urgent callback handling, and service-request/order handoff. |
+| [Care Call AI](apps/typescript/care-call-ai/) | TypeScript + Python | Practical-support outreach app for charities, with approved CALL-E rounds, no-call preflight, operator gates, and reviewed request/order handoff. |
 ```
 
 Suggested short list entry if maintainers prefer the simple README template:
 
 ```markdown
-- [Care Call AI](apps/typescript/care-call-ai/) - Condition-aware care outreach app for safe CALL-E rounds with no-call preflight, critical-recipient handling, urgent callback queue, and service-request/order handoff.
+- [Care Call AI](apps/typescript/care-call-ai/) - Practical-support outreach app for charities with approved CALL-E rounds, no-call preflight, critical-recipient handling, and reviewed request/order handoff.
 ```
 
 Suggested Agent Skills entry:

@@ -2,11 +2,11 @@
 
 **Care seen. Needs heard. Help delivered.**
 
-Care Call AI is a condition-aware care operations workflow built with CALL-E.
-It helps charities, disability support teams, elderly care coordinators, and
-community support services safely run approved phone check-ins and turn
-completed conversations into practical service requests and printable
-fulfilment orders.
+Care Call AI is a practical support outreach and fulfilment coordination
+workflow built with CALL-E. It helps charities, disability support
+organizations, and community support services run approved phone check-ins
+with beneficiaries and turn completed conversations into practical support
+requests and printable fulfilment orders.
 
 The product is built around a simple belief: a care call only matters if the
 person's request is heard accurately and becomes an action the team can
@@ -24,10 +24,11 @@ complete.
 
 ## Why This Exists
 
-Care teams spend a lot of time calling vulnerable people, listening carefully,
-writing down requests, and routing those requests to delivery, medication,
-transport, cleaning, laundry, home help, companionship, repairs, documents
-support, or other practical support teams.
+Charities and support organizations spend a lot of time contacting
+beneficiaries, listening carefully, writing down everyday requests, and routing
+them to food and groceries, medication pickup, transport, cleaning, laundry,
+other home help, companionship, leisure activities, repairs, documents support,
+or other non-clinical support teams.
 
 The risk is not only that a call is missed. The larger risk is that a person is
 heard in the moment, but their request is later delayed, duplicated,
@@ -60,7 +61,9 @@ Care Call AI lets coordinators:
 - print grouped fulfilment sheets with checkboxes and signoff lines;
 - monitor urgent callback requests in a separate queue;
 - accept token-protected Siri Shortcut callback requests for registered
-  recipients.
+  recipients;
+- answer product and workflow questions through a secure text and voice
+  assistant pattern.
 
 ## Screens
 
@@ -84,12 +87,13 @@ The project is safe by default:
 - repeated recent calls are blocked from unattended automation;
 - real phones are not committed;
 - protected backend calls require a bearer token;
-- browser code does not receive backend, CALL-E, callback, or support delivery
-  credentials.
+- browser code does not receive backend, CALL-E, assistant, or support
+  delivery credentials.
 
-Care Call AI is not a CRM replacement, medical device, emergency service,
-clinical decision system, or legal/financial/medical advice tool. It does not
-replace emergency services, clinicians, carers, or human operators.
+Care Call AI is not a medical, healthcare, clinical, patient-care, or emergency-
+response product, and it is not intended for hospitals, medical institutions,
+or emergency services. It does not replace clinicians, carers, support workers,
+or human coordinators.
 
 ## Local Run
 
@@ -171,14 +175,17 @@ CARECALL_SIRI_CALLBACK_TOKENS=rec-001=<recipient callback token>
 Optional frontend server runtime variables:
 
 ```text
+CH_RAIXON_ENABLED=false
+CH_RAIXON_API_URL=<assistant API URL if enabled>
+CH_RAIXON_SERVICE_TOKEN=<assistant service token if enabled>
 CARECALL_SUPPORT_EMAIL_ENDPOINT=<server-side support delivery endpoint>
 CARECALL_SUPPORT_EMAIL_TOKEN=<server-side support delivery token>
 CARECALL_SUPPORT_RATE_LIMIT_KEY_SECRET=<long random rate-limit secret>
 ```
 
-Never place backend tokens, CALL-E keys, callback tokens, or support delivery
-tokens in variables prefixed with `NEXT_PUBLIC_` or `VITE_`. Browser code must
-call same-origin frontend routes only; those routes attach server-side
+Never place backend tokens, CALL-E keys, assistant service tokens, or support
+delivery tokens in variables prefixed with `NEXT_PUBLIC_` or `VITE_`. Browser
+code must call same-origin frontend routes only; those routes attach server-side
 credentials when talking to protected backend services.
 
 ## Architecture
@@ -193,6 +200,15 @@ Next.js frontend
   -> guarded CALL-E execution
   -> conservative call-result import
   -> Help delivered orders and printable sheets
+```
+
+The assistant follows the same server-side credential pattern:
+
+```text
+Assistant widget
+  -> same-origin assistant proxy
+  -> CareCall assistant runtime
+  -> grounded CareCall knowledge pack
 ```
 
 This repository is a sanitized public hackathon edition. It keeps the working
@@ -301,7 +317,7 @@ Suggested contribution areas:
 
 ## Public Safety Note
 
-Care Call AI is a care-intake and service-request workflow that helps
+Care Call AI is a practical-support outreach and service-request workflow that helps
 coordinators use CALL-E responsibly for approved outreach. Critical, blocked,
 do-not-call, repeated too recently, and operator-only recipients are excluded
 from unattended automatic calling. Unsupported, illegal, unsafe, exploitative,
