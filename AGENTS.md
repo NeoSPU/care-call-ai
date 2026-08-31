@@ -10,9 +10,10 @@ copy lives in the private repository at:
 
 `/Users/rick/Documents/Dev/AI Agents/agent_workflow/call-e-hackathon/docs/CARECALL-PROJECT-TRUTH.md`
 
-The same file is mirrored into the related public demo, CareCall landing, and
-Alex Raixon portfolio repositories. Never introduce a competing product
-definition in another document or knowledge pack. If positioning changes:
+The same file is mirrored into the related public demo, CareCall landing, Alex
+Raixon portfolio repositories, and the CareCall tenant directory in the shared
+assistant runtime. Never introduce a competing product definition in another
+document or knowledge pack. If positioning changes:
 
 1. update the authoritative file first;
 2. copy it byte-for-byte to every repository listed in that file;

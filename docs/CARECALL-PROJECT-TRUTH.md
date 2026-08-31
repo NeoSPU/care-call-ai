@@ -102,7 +102,7 @@ human under the organization's own safeguarding and emergency procedures.
    prepares coordinator-reviewed requests and printable handoff sheets for the
    organization or its delivery and volunteer teams.
 
-## Repository map and synchronization rule
+## Project repository map and downstream runtime
 
 | Role | Repository | Public domain | Truth-file role |
 |---|---|---|---|
@@ -110,9 +110,11 @@ human under the organization's own safeguarding and emergency procedures.
 | Public hackathon demo (not publicly deployed) | `/Users/rick/Documents/Dev/AI Agents/agent_workflow/call-e-demo/care-call-ai` | None | Exact mirror |
 | Project landing | `/Users/rick/Documents/Dev/AI Agents/agent_workflow/carecall-landing` | `https://about.care.alexraixon.com` | Exact mirror |
 | Alex Raixon portfolio | `/Users/rick/Documents/Dev/AI Agents/agent_workflow/raixon-landing` | `https://alexraixon.com` | Exact mirror |
+| Shared assistant runtime (downstream; not a fifth project repository) | `/Users/rick/Documents/Dev/AI Agents/agent_workflow/integrations-ch-fitcoach/ch-raixon/knowledge-packs/carecall` | `https://assistant.care.alexraixon.com` | Exact truth mirror plus CareCall tenant knowledge pack |
 
 Edit this file only in the authoritative repository, then copy it byte-for-byte
-to the three mirrors. Local `AGENTS.md` files must direct future agents back to
-this canonical source. A repository-specific document may add implementation
+to the three project mirrors and the CareCall directory in the shared assistant
+runtime. Local `AGENTS.md` files must direct future agents back to this
+canonical source. A repository-specific document may add implementation
 details, but it must not redefine the product, audience, terminology, or
 boundaries above.
