@@ -288,19 +288,61 @@ not include provider-specific cluster scripts or private infrastructure notes.
 
 ## Siri Callback MVP
 
-Apple Shortcuts can submit a recipient-triggered callback request to:
+Siri through Apple Shortcuts is the verified voice-assistant callback
+integration in the current version. A registered and consented recipient can
+say `Hey Siri, Raixon Callback` to request a protected CALL-E callback. The
+request still passes CareCall's eligibility, daily-limit, run-tracking,
+result-import, and human-review controls.
 
-```text
-POST https://<your-carecall-frontend-domain>/api/callback-requests
-Authorization: Bearer <recipient-callback-token>
-Content-Type: application/json
+### Configure the recipient token
+
+Generate a different token for each registered recipient:
+
+```bash
+openssl rand -base64 48
 ```
 
-Map recipient callback tokens in the Next.js server environment only:
+Map that token to the recipient id in the Next.js server environment, then
+redeploy the frontend:
 
 ```text
 CARECALL_SIRI_CALLBACK_TOKENS=rec-001=<recipient-callback-token>
 ```
+
+Keep the token in the server secret manager, the recipient's Shortcut, and a
+password manager only. Never commit it or show it in demo screenshots.
+
+### Build the `Raixon Callback` Shortcut
+
+1. Open Apple Shortcuts on the recipient's iPhone or iPad, tap `+`, and name
+   the Shortcut `Raixon Callback`.
+2. Add **Get Contents of URL** and set the URL to:
+
+   ```text
+   https://<your-carecall-frontend-domain>/api/callback-requests
+   ```
+
+3. Expand the action details and select `POST` with a `JSON` request body.
+4. Add these headers:
+
+   ```text
+   Authorization: Bearer <recipient-callback-token>
+   Content-Type: application/json
+   ```
+
+5. Add one JSON row per field (do not paste the whole object into one key):
+
+   ```text
+   Key: request_text  Type: Text  Value: Please call me back
+   Key: locale        Type: Text  Value: en-GB
+   Key: device_label  Type: Text  Value: Recipient iPhone
+   ```
+
+   Omit `recipient_id`; the server derives it from the bearer token.
+6. Add **Get Dictionary Value** for the response field `message`, followed by
+   **Speak Text** or **Show Result**.
+7. Run the Shortcut once inside Shortcuts and confirm that CareCall accepts the
+   request. Then test the phrase `Hey Siri, Raixon Callback`.
 
 After frontend token validation, the protected backend starts an immediate
 CALL-E callback for eligible recipients and records the linked run in the
@@ -317,6 +359,9 @@ callback endpoint and CALL-E workflow, so planned adapters for Alexa, Google
 Assistant, Yandex Alice, and other voice assistants can reuse the same consent,
 eligibility, callback-limit, audit, and human-review controls. Those additional
 voice-assistant integrations are not currently available.
+
+Siri and Apple Shortcuts are trademarks of Apple Inc. CareCall AI is not
+affiliated with or endorsed by Apple.
 
 ## Final Real Call
 
