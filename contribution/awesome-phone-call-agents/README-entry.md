@@ -1,19 +1,13 @@
 # README List Entry
 
-Suggested row for the `apps/` table:
+Suggested entry for `Community apps`:
 
 ```markdown
-| [Care Call AI](apps/typescript/care-call-ai/) | TypeScript + Python | Practical-support outreach app for charities, with approved CALL-E rounds, no-call preflight, operator gates, and reviewed request/order handoff. |
+- [Care Call AI](https://github.com/NeoSPU/care-call-ai) - Practical-support outreach app for charities with approved CALL-E rounds, no-call preflight, operator gates, and reviewed request/order handoff. [Integration notes](docs/community-apps/care-call-ai.md).
 ```
 
-Suggested short list entry if maintainers prefer the simple README template:
+Agent Skills entry:
 
 ```markdown
-- [Care Call AI](apps/typescript/care-call-ai/) - Practical-support outreach app for charities with approved CALL-E rounds, no-call preflight, critical-recipient handling, and reviewed request/order handoff.
-```
-
-Suggested Agent Skills entry:
-
-```markdown
-- [CareCall Intake Skill](agent-skills/carecall-intake/) - Practical-support call behavior that captures only explicit recipient needs, preserves quantities and urgency, handles authorized answerers and same-day updates, and routes unsafe or prohibited requests to human review.
+- [`carecall-intake`](skills/carecall-intake/) - Consent-aware practical-support check-ins that capture only explicit beneficiary needs and route unsafe, unsupported, or uncertain outcomes to human review.
 ```

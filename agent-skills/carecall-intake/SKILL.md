@@ -1,3 +1,8 @@
+---
+name: carecall-intake
+description: Run a consented, approval-gated CALL-E practical-support check-in that records only explicit beneficiary requests and routes unsafe or unsupported outcomes to human review.
+---
+
 # CareCall Intake Agent Skill
 
 This skill defines the conversation behavior for Care Call AI outbound support
@@ -138,3 +143,8 @@ Valid output:
 ```
 
 The previous order is not duplicated. Only the newly confirmed update is added.
+
+## References
+
+- Read `references/safety.md` before preparing a live call.
+- Use `references/examples.md` for preview and structured-output examples.

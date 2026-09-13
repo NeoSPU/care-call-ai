@@ -8,13 +8,13 @@ coordinators prepare approved beneficiary call batches, run no-call preflight,
 place a small guarded CALL-E batch, and turn explicit everyday needs from
 conversations into reviewed support requests and printable delivery orders.
 
-Suggested contribution areas: `Apps` and `Agent Skills`.
+Contribution areas: `Community apps` and `Agent Skills`.
 
 Suggested path:
 
 ```text
-apps/typescript/care-call-ai/
-agent-skills/carecall-intake/
+docs/community-apps/care-call-ai.md
+skills/carecall-intake/
 ```
 
 ## What Makes It Different

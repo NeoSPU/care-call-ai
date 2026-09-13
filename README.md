@@ -10,6 +10,7 @@
 - **Project landing:** [about.care.alexraixon.com](https://about.care.alexraixon.com)
 - **Public source:** [github.com/NeoSPU/care-call-ai](https://github.com/NeoSPU/care-call-ai)
 - **CI results:** [CareCall CI](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml)
+- **CALL-E contribution PR:** [CALLE-AI/awesome-phone-call-agents#550](https://github.com/CALLE-AI/awesome-phone-call-agents/pull/550)
 - **CALL-E contribution package:** [`contribution/awesome-phone-call-agents/`](contribution/awesome-phone-call-agents/)
 
 The live application is deployed from the private production repository. This

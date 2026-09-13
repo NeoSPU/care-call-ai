@@ -23,9 +23,10 @@ apps/typescript/care-call-ai/
 ```
 
 Care Call AI fits the `Apps` area because it is a complete operator workflow.
-It also includes a reusable `Agent Skills` contribution in
-`agent-skills/carecall-intake/SKILL.md` for explicit-request-only practical
-support intake.
+It also includes a reusable `Agent Skills` contribution. Its repository-local
+source is `agent-skills/carecall-intake/`; its upstream contribution path is
+`skills/carecall-intake/`. It provides explicit-request-only practical support
+intake with separate safety and example references.
 
 ## What It Demonstrates
 
@@ -153,11 +154,15 @@ handling. Emergency services are outside the scope of this demo app.
 
 ## Agent Skill
 
-The reusable intake skill is in:
+The reusable intake skill is maintained locally in:
 
 ```text
 agent-skills/carecall-intake/SKILL.md
 ```
+
+For the `awesome-phone-call-agents` contribution, copy the complete directory
+to `skills/carecall-intake/` so `SKILL.md`, `references/safety.md`, and
+`references/examples.md` remain together.
 
 It defines the call behavior that prevents common practical-support intake mistakes:
 
