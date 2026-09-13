@@ -2,6 +2,20 @@
 
 **Care seen. Needs heard. Help delivered.**
 
+[![CareCall CI](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml)
+
+## Judge Links
+
+- **Live application:** [care.alexraixon.com](https://care.alexraixon.com)
+- **Project landing:** [about.care.alexraixon.com](https://about.care.alexraixon.com)
+- **Public source:** [github.com/NeoSPU/care-call-ai](https://github.com/NeoSPU/care-call-ai)
+- **CI results:** [CareCall CI](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml)
+- **CALL-E contribution package:** [`contribution/awesome-phone-call-agents/`](contribution/awesome-phone-call-agents/)
+
+The live application is deployed from the private production repository. This
+repository is the synchronized, sanitized, runnable hackathon edition used for
+technical review.
+
 Care Call AI is a practical support outreach and fulfilment coordination
 workflow built with CALL-E. It helps charities, disability support
 organizations, and community support services run approved phone check-ins

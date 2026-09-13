@@ -3,7 +3,7 @@
 Status: authoritative product-positioning source  
 Canonical repository: `/Users/rick/Documents/Dev/AI Agents/agent_workflow/call-e-hackathon`  
 Canonical file: `docs/CARECALL-PROJECT-TRUTH.md`  
-Last updated: 2026-08-31
+Last updated: 2026-09-13
 
 This is the single source of truth for CareCall AI positioning. README files,
 website copy, SEO, assistant knowledge packs, demo scripts, hackathon forms,
@@ -130,7 +130,7 @@ mirrors.
 | Role | Repository | Public domain | Truth-file role |
 |---|---|---|---|
 | Private product (frontend and backend) | `/Users/rick/Documents/Dev/AI Agents/agent_workflow/call-e-hackathon` | `https://care.alexraixon.com` | Authoritative source |
-| Public hackathon demo (not publicly deployed) | `/Users/rick/Documents/Dev/AI Agents/agent_workflow/call-e-demo/care-call-ai` | None | Exact mirror |
+| Public hackathon repository | `/Users/rick/Documents/Dev/AI Agents/agent_workflow/call-e-demo/care-call-ai` | `https://github.com/NeoSPU/care-call-ai` | Exact mirror |
 | Project landing | `/Users/rick/Documents/Dev/AI Agents/agent_workflow/carecall-landing` | `https://about.care.alexraixon.com` | Exact mirror |
 | Alex Raixon portfolio | `/Users/rick/Documents/Dev/AI Agents/agent_workflow/raixon-landing` | `https://alexraixon.com` | Exact mirror |
 | Shared assistant runtime (downstream; not a fifth project repository) | `/Users/rick/Documents/Dev/AI Agents/agent_workflow/integrations-ch-fitcoach/ch-raixon/knowledge-packs/carecall` | `https://assistant.care.alexraixon.com` | Exact truth mirror plus CareCall tenant knowledge pack |
