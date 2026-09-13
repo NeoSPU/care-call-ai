@@ -13,8 +13,8 @@ help:
 	@printf '%s\n' '  make frontend-test       Run frontend Vitest suite'
 	@printf '%s\n' '  make frontend-build      Build the Next.js frontend'
 	@printf '%s\n' '  make docker-config       Validate demo Docker compose config'
-	@printf '%s\n' '  make demo-up             Start backend Docker service on port 8000'
-	@printf '%s\n' '  make demo-smoke          Check demo URLs after make demo-up'
+	@printf '%s\n' '  make demo-up             Build and start the local demo on port 3000'
+	@printf '%s\n' '  make demo-smoke          Check the local backend after make demo-up'
 	@printf '%s\n' '  make demo-down           Stop the demo stack'
 
 backend-test:
@@ -38,7 +38,7 @@ docker-config:
 	docker compose $(COMPOSE_ENV_FILE) -f docker-compose.dev.yml config
 
 demo-up:
-	CARECALL_BACKEND_HOST_PORT=8000 docker compose $(COMPOSE_ENV_FILE) -f docker-compose.dev.yml up backend --build
+	CARECALL_BACKEND_HOST_PORT=8000 docker compose $(COMPOSE_ENV_FILE) -f docker-compose.dev.yml up --build -d
 
 demo-down:
 	docker compose $(COMPOSE_ENV_FILE) -f docker-compose.dev.yml down

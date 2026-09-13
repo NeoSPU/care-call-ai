@@ -111,99 +111,61 @@ response product, and it is not intended for hospitals, medical institutions,
 or emergency services. It does not replace clinicians, carers, support workers,
 or human coordinators.
 
-## Local Run
+## Installation And Local Demo
 
-Copy the env example if needed:
+The judging setup requires only Git, Docker Desktop, and Make. Clone the public
+repository and enter it:
+
+```bash
+git clone https://github.com/NeoSPU/care-call-ai.git
+cd care-call-ai
+```
+
+Create the local demo configuration:
 
 ```bash
 cp .env.example .env.local
 ```
 
-Fill the required backend, operator, and optional CALL-E values in `.env.local`.
-The Docker backend and local Next.js dev server both load this file without
-printing secret values.
+The supplied file already contains every value required for local review:
 
-Start the backend in Docker:
+```dotenv
+CARECALL_OPERATOR_USERNAME=carecall-coordinator
+CARECALL_OPERATOR_PASSWORD=carecall-demo-password
+CARECALL_AUTH_SECRET=carecall-local-development-secret-not-for-production
+CARECALL_BACKEND_API_TOKEN=carecall-local-backend-token
+CARECALL_LIVE_CALLS_ENABLED=false
+```
+
+These are intentionally public, local-only values. They are not production
+credentials. No CALL-E key, assistant token, support-delivery token, Siri token,
+external service, or manual secret generation is required for the local demo.
+Real outbound calls remain disabled.
+
+Build and start the complete frontend and backend stack:
 
 ```bash
 make demo-up
 ```
 
-In another terminal, verify the backend:
+Verify the local backend:
 
 ```bash
 make demo-smoke
 ```
 
-Start the frontend locally in a second terminal:
+Open [http://localhost:3000](http://localhost:3000) and sign in with:
+
+```text
+Username: carecall-coordinator
+Password: carecall-demo-password
+```
+
+Stop the demo when finished:
 
 ```bash
-npm --prefix frontend install
-npm --prefix frontend run dev
+make demo-down
 ```
-
-Open:
-
-```text
-http://localhost:3000
-```
-
-Default local demo login:
-
-```text
-operator: carecall-coordinator
-password: carecall-demo-password
-```
-
-Use port `3000` for the frontend and `8000` for the backend in the public demo
-repository.
-
-## Environment Variables And Secret Placement
-
-Use `.env.local` for local development. For hosted deployments, place the same
-values in the secret manager or environment variable settings of the relevant
-runtime. Do not commit real values.
-
-Backend runtime only:
-
-```text
-CARECALL_BACKEND_API_TOKEN=<long shared frontend-to-backend bearer token>
-CARECALL_CALLE_PROVIDER=api
-CARECALL_CALLE_API_BASE_URL=https://api.heycall-e.com
-CARECALL_CALLE_API_KEY=<official CALL-E dashboard Access Key>
-CARECALL_CALLE_REGION=GB
-CARECALL_CALLE_TIMEOUT_SECONDS=45
-CARECALL_LIVE_CALLS_ENABLED=true
-CARECALL_MAX_LIVE_BATCH_SIZE=1
-```
-
-Frontend server runtime only:
-
-```text
-CARECALL_API_BASE_URL=https://<your-backend-origin>
-CARECALL_BACKEND_API_TOKEN=<same bearer token configured in the backend>
-CARECALL_OPERATOR_USERNAME=<operator username>
-CARECALL_OPERATOR_PASSWORD=<operator password>
-CARECALL_AUTH_SECRET=<long random cookie/session signing secret>
-CARECALL_SIRI_CALLBACK_TOKENS=rec-001=<recipient callback token>
-```
-
-Optional frontend server runtime variables:
-
-```text
-CARECALL_SUPPORT_EMAIL_ENDPOINT=<server-side support delivery endpoint>
-CARECALL_SUPPORT_EMAIL_TOKEN=<server-side support delivery token>
-CARECALL_SUPPORT_RATE_LIMIT_KEY_SECRET=<long random rate-limit secret>
-```
-
-The public frontend intentionally excludes the production assistant widget.
-The separately deployed CareCall assistant runtime and its credentials are not
-part of the local judging environment.
-
-Never place backend tokens, CALL-E keys, or support
-delivery tokens in variables prefixed with `NEXT_PUBLIC_` or `VITE_`. Browser
-code must call same-origin frontend routes only; those routes attach server-side
-credentials when talking to protected backend services.
 
 ## Architecture
 
@@ -240,42 +202,6 @@ make frontend-build
 make secrets-check
 ```
 
-## CALL-E Readiness
-
-Configure the official CALL-E dashboard Access Key once in `.env.local`:
-
-```bash
-CARECALL_CALLE_PROVIDER=api
-CARECALL_CALLE_API_BASE_URL=https://api.heycall-e.com
-CARECALL_CALLE_API_KEY=<official CALL-E dashboard Access Key>
-CARECALL_CALLE_REGION=GB
-CARECALL_CALLE_TIMEOUT_SECONDS=45
-```
-
-Do not run real outbound calls from ad hoc CLI commands. In Care Call AI, real
-calls must go through the guarded browser workflow: Operator Panel selection,
-Round preflight, four confirmation checkboxes, and the exact authorization
-phrase shown in the UI.
-
-## Generic Deployment Notes
-
-The public demo can be deployed on any standard web and container platform:
-
-1. Build and run the Python backend container.
-2. Expose the backend through HTTPS.
-3. Configure the backend runtime secrets listed above.
-4. Deploy the Next.js frontend as a server-rendered app.
-5. Configure the frontend server runtime secrets listed above.
-6. Set the frontend `CARECALL_API_BASE_URL` to the HTTPS backend origin.
-7. Confirm that unauthenticated backend API requests return `401`.
-8. Confirm that authenticated frontend proxy requests return dashboard data.
-9. Run the no-call smoke checks before any live CALL-E call.
-
-For a scalable production shape, use a protected backend API behind HTTPS, a
-durable database, queue workers for retries and busy recipients, and a load
-balancer in front of horizontally scalable services. The public repository does
-not include provider-specific cluster scripts or private infrastructure notes.
-
 ## Siri Callback MVP
 
 Siri through Apple Shortcuts is the verified voice-assistant callback
@@ -292,15 +218,15 @@ Generate a different token for each registered recipient:
 openssl rand -base64 48
 ```
 
-Map that token to the recipient id in the Next.js server environment, then
-redeploy the frontend:
+For an optional local callback-intake test, add the token mapping to
+`.env.local`, then restart the local demo:
 
 ```text
 CARECALL_SIRI_CALLBACK_TOKENS=rec-001=<recipient-callback-token>
 ```
 
-Keep the token in the server secret manager, the recipient's Shortcut, and a
-password manager only. Never commit it or show it in demo screenshots.
+This token is not needed for the normal local judging path. Never commit it or
+show it in demo screenshots.
 
 ### Build the `Raixon Callback` Shortcut
 
@@ -309,7 +235,7 @@ password manager only. Never commit it or show it in demo screenshots.
 2. Add **Get Contents of URL** and set the URL to:
 
    ```text
-   https://<your-carecall-frontend-domain>/api/callback-requests
+   http://<computer-LAN-IP>:3000/api/callback-requests
    ```
 
 3. Expand the action details and select `POST` with a `JSON` request body.
@@ -352,14 +278,6 @@ voice-assistant integrations are not currently available.
 
 Siri and Apple Shortcuts are trademarks of Apple Inc. CareCall AI is not
 affiliated with or endorsed by Apple.
-
-## Final Real Call
-
-For final approved demos only, edit the test recipient card in the browser,
-enter the consented phone number, select only that eligible recipient, run Round
-preflight, complete every approval checkbox, type the authorization phrase shown
-in the UI, and start the call from the browser. Stop if consent, answerer
-identity, route, keyset, or participant comfort is uncertain.
 
 ## Hackathon Submission
 
