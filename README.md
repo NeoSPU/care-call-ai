@@ -194,12 +194,16 @@ Optional frontend server runtime variables:
 
 ```text
 CH_RAIXON_ENABLED=false
-CH_RAIXON_API_URL=<assistant API URL if enabled>
-CH_RAIXON_SERVICE_TOKEN=<assistant service token if enabled>
 CARECALL_SUPPORT_EMAIL_ENDPOINT=<server-side support delivery endpoint>
 CARECALL_SUPPORT_EMAIL_TOKEN=<server-side support delivery token>
 CARECALL_SUPPORT_RATE_LIMIT_KEY_SECRET=<long random rate-limit secret>
 ```
+
+The public repository contains the assistant widget and same-origin proxy
+contract, but it does not contain or deploy the external CareCall assistant
+runtime. Keep `CH_RAIXON_ENABLED=false` for local judging. No assistant URL or
+service token is required. Production assistant credentials are managed only
+in the separately deployed CareCall environment.
 
 Never place backend tokens, CALL-E keys, assistant service tokens, or support
 delivery tokens in variables prefixed with `NEXT_PUBLIC_` or `VITE_`. Browser
@@ -220,12 +224,14 @@ Next.js frontend
   -> Help delivered orders and printable sheets
 ```
 
-The assistant follows the same server-side credential pattern:
+The optional assistant frontend integration follows the same server-side
+credential pattern. Its external runtime is not included in this repository
+and remains disabled for local judging:
 
 ```text
-Assistant widget
+Assistant widget (optional)
   -> same-origin assistant proxy
-  -> CareCall assistant runtime
+  -> separately deployed CareCall assistant runtime
   -> grounded CareCall knowledge pack
 ```
 
