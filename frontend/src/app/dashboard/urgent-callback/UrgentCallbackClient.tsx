@@ -62,7 +62,7 @@ function isApprovedStatus(status: string) {
 }
 
 function automaticCallbackFinishedStatus(status: string) {
-  return ["auto_callback_completed", "auto_callback_no_contact", "auto_callback_failed"].includes(status);
+  return ["resolved", "auto_callback_completed", "auto_callback_no_contact", "auto_callback_failed"].includes(status);
 }
 
 function callbackResolvedStatus(status: string) {

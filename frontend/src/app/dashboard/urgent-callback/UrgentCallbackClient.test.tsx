@@ -315,6 +315,10 @@ describe("UrgentCallbackClient", () => {
         resolution_note: "Cleared from callback queue after terminal automatic callback.",
       });
     });
+    await waitFor(() => {
+      expect(screen.queryByText("Auto Callback Failed")).toBeNull();
+      expect(screen.getByText("0 open")).toBeTruthy();
+    });
   });
 
   it("lets the operator clear a failed automatic callback while keeping it in review until cleared", async () => {
