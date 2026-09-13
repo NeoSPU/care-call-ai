@@ -9,7 +9,6 @@ import {
   urgentCallbackOpenCount,
   URGENT_CALLBACK_COUNT_EVENT,
 } from "../lib/urgent-callback-events";
-import { AssistantWidget } from "./AssistantWidget";
 import { ThemeToggle } from "./ThemeToggle";
 
 type AppShellProps = {
@@ -344,7 +343,6 @@ export function AppShell({
           <span>© 2026 Alex Raixon. All rights reserved.</span>
         </footer>
       </div>
-      <AssistantWidget />
     </main>
   );
 }

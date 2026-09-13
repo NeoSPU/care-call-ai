@@ -80,8 +80,6 @@ Care Call AI lets coordinators:
 - monitor urgent callback requests in a separate queue;
 - accept token-protected Siri Shortcut callback requests for registered
   recipients;
-- answer product and workflow questions through a secure text and voice
-  assistant pattern.
 
 ## Screens
 
@@ -105,7 +103,7 @@ The project is safe by default:
 - repeated recent calls are blocked from unattended automation;
 - real phones are not committed;
 - protected backend calls require a bearer token;
-- browser code does not receive backend, CALL-E, assistant, or support
+- browser code does not receive backend, CALL-E, or support
   delivery credentials.
 
 Care Call AI is not a medical, healthcare, clinical, patient-care, or emergency-
@@ -193,19 +191,16 @@ CARECALL_SIRI_CALLBACK_TOKENS=rec-001=<recipient callback token>
 Optional frontend server runtime variables:
 
 ```text
-CH_RAIXON_ENABLED=false
 CARECALL_SUPPORT_EMAIL_ENDPOINT=<server-side support delivery endpoint>
 CARECALL_SUPPORT_EMAIL_TOKEN=<server-side support delivery token>
 CARECALL_SUPPORT_RATE_LIMIT_KEY_SECRET=<long random rate-limit secret>
 ```
 
-The public repository contains the assistant widget and same-origin proxy
-contract, but it does not contain or deploy the external CareCall assistant
-runtime. Keep `CH_RAIXON_ENABLED=false` for local judging. No assistant URL or
-service token is required. Production assistant credentials are managed only
-in the separately deployed CareCall environment.
+The public frontend intentionally excludes the production assistant widget.
+The separately deployed CareCall assistant runtime and its credentials are not
+part of the local judging environment.
 
-Never place backend tokens, CALL-E keys, assistant service tokens, or support
+Never place backend tokens, CALL-E keys, or support
 delivery tokens in variables prefixed with `NEXT_PUBLIC_` or `VITE_`. Browser
 code must call same-origin frontend routes only; those routes attach server-side
 credentials when talking to protected backend services.
@@ -222,17 +217,6 @@ Next.js frontend
   -> guarded CALL-E execution
   -> conservative call-result import
   -> Help delivered orders and printable sheets
-```
-
-The optional assistant frontend integration follows the same server-side
-credential pattern. Its external runtime is not included in this repository
-and remains disabled for local judging:
-
-```text
-Assistant widget (optional)
-  -> same-origin assistant proxy
-  -> separately deployed CareCall assistant runtime
-  -> grounded CareCall knowledge pack
 ```
 
 This repository is a sanitized public hackathon edition. It keeps the working

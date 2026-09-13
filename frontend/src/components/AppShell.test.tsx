@@ -31,6 +31,7 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: /Care Call AI.*Coordinator console/i }).getAttribute("href")).toBe("/");
     expect(screen.getByRole("link", { name: /Operator Panel/i }).getAttribute("href")).toBe("/dashboard/operator");
     expect(screen.getByRole("button", { name: "Switch to dark theme" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /CareCall assistant/i })).toBeNull();
   });
 
   it("groups navigation by the CareCall slogan without the old service request shortcut", () => {
