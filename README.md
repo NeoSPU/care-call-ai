@@ -4,10 +4,15 @@
 
 [![CareCall CI](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml)
 
+[![Watch the Care Call AI demo](frontend/public/carecall-splash-screen.png)](https://youtu.be/Hc2bWjTnKFQ)
+
+*Click the splash screen to watch the Care Call AI demo.*
+
 ## Judge Links
 
 - **Live application:** [care.alexraixon.com](https://care.alexraixon.com)
 - **Project landing:** [about.care.alexraixon.com](https://about.care.alexraixon.com)
+- **Demo video:** [Watch on YouTube](https://youtu.be/Hc2bWjTnKFQ)
 - **Public source:** [github.com/NeoSPU/care-call-ai](https://github.com/NeoSPU/care-call-ai)
 - **CI results:** [CareCall CI](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml)
 - **CALL-E contribution PR:** [CALLE-AI/awesome-phone-call-agents#550](https://github.com/CALLE-AI/awesome-phone-call-agents/pull/550)

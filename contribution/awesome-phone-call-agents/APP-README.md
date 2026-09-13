@@ -14,6 +14,11 @@ Product promise:
 Care seen. Needs heard. Help delivered.
 ```
 
+- [Public repository](https://github.com/NeoSPU/care-call-ai)
+- [Live application](https://care.alexraixon.com)
+- [Project landing](https://about.care.alexraixon.com)
+- [Demo video](https://youtu.be/Hc2bWjTnKFQ)
+
 ## Contribution Area
 
 Suggested location in `awesome-phone-call-agents`:

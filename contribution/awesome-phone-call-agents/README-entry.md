@@ -3,7 +3,7 @@
 Suggested entry for `Community apps`:
 
 ```markdown
-- [Care Call AI](https://github.com/NeoSPU/care-call-ai) - Practical-support outreach app for charities with approved CALL-E rounds, no-call preflight, operator gates, and reviewed request/order handoff. [Integration notes](docs/community-apps/care-call-ai.md).
+- [Care Call AI](https://github.com/NeoSPU/care-call-ai) - Practical-support outreach app for charities with approved CALL-E rounds, no-call preflight, operator gates, and reviewed request/order handoff. [Demo video](https://youtu.be/Hc2bWjTnKFQ) · [Integration notes](docs/community-apps/care-call-ai.md).
 ```
 
 Agent Skills entry:
