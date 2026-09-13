@@ -311,6 +311,13 @@ medical service.
 The Siri Shortcut path is another way to enter the same safety model, not a way
 to bypass it.
 
+Siri through Apple Shortcuts is the verified callback integration in the
+current version. The platform-specific trigger is separated from the protected
+callback endpoint and CALL-E workflow, so planned adapters for Alexa, Google
+Assistant, Yandex Alice, and other voice assistants can reuse the same consent,
+eligibility, callback-limit, audit, and human-review controls. Those additional
+voice-assistant integrations are not currently available.
+
 ## Final Real Call
 
 For final approved demos only, edit the test recipient card in the browser,

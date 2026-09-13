@@ -102,6 +102,23 @@ human under the organization's own safeguarding and emergency procedures.
    prepares coordinator-reviewed requests and printable handoff sheets for the
    organization or its delivery and volunteer teams.
 
+## Voice-assistant callback status
+
+Siri callback requests through Apple Shortcuts are a confirmed capability of
+the current CareCall AI version. A registered and consented recipient can use
+the `Raixon Callback` shortcut to submit a protected callback request into the
+same eligibility, daily-limit, call-run tracking, result-import, and human-review
+workflow used by CareCall.
+
+Alexa, Google Assistant, Yandex Alice, and other voice-assistant triggers are
+future integrations, not currently supported production features. CareCall's
+callback architecture keeps the voice-platform trigger adapter separate from
+the protected callback endpoint and the downstream CALL-E safety workflow. This
+is designed to make additional voice-assistant adapters straightforward to add
+without bypassing or duplicating the existing consent, eligibility, rate-limit,
+audit, and human-review controls. Public copy must identify Siri as available
+now and every other named voice-assistant integration as planned.
+
 ## Assistant knowledge scopes
 
 The assistant on `alexraixon.com` is Alex Raixon's main portfolio assistant.
