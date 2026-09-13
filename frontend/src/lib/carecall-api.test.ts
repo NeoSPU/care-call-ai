@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { carecallApiBaseUrl, getDashboardData } from "./carecall-api";
+import { carecallApiBaseUrl, getDashboardData, requestLiveExecution } from "./carecall-api";
 
 describe("carecallApiBaseUrl", () => {
   const originalWindow = globalThis.window;
@@ -52,5 +52,24 @@ describe("carecallApiBaseUrl", () => {
     const [, init] = fetchMock.mock.calls[0];
     const expectedHeader = `Bearer ${"carecall-local"}-${"backend-token"}`;
     expect((init?.headers as Record<string, string>).Authorization).toBe(expectedHeader);
+  });
+
+  it("returns a structured live-execution rejection when the backend responds with 409", async () => {
+    const rejection = {
+      accepted: false,
+      mode: "live",
+      real_calls_placed: 0,
+      blocked_reasons: ["CALL-E rejected the selected region and language."],
+      records: [],
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(rejection), {
+      headers: { "Content-Type": "application/json" },
+      status: 409,
+    })));
+
+    await expect(requestLiveExecution({
+      plan_id: "plan-001",
+      approval_id: "approval-001",
+    })).resolves.toEqual(rejection);
   });
 });

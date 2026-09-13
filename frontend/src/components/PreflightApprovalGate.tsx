@@ -38,6 +38,30 @@ type PreflightApprovalGateProps = {
 };
 
 const AUTHORIZATION_PHRASE = "EXECUTE LIVE CALLS";
+const UNSUPPORTED_REGION_LANGUAGE_FALLBACK =
+  "CALL-E does not currently support the selected recipient's phone region and language combination. " +
+  "Choose a supported combination, run preflight again, and retry.";
+
+export function liveExecutionRejectionMessage(blockedReasons: string[]): string {
+  for (const reason of blockedReasons) {
+    const match = reason.match(
+      /recognized as ([A-Z]{2}).*?but ([A-Za-z-]+) calls to \1 (?:aren't|aren’t) currently supported/i,
+    );
+    if (match) {
+      const region = match[1].toUpperCase();
+      const language = match[2];
+      return (
+        `CALL-E does not currently support ${language} calls to the selected ${region} phone region. ` +
+        "Choose a supported recipient phone region and language combination, run preflight again, and retry."
+      );
+    }
+    const normalized = reason.toLowerCase();
+    if (normalized.includes("currently supported") && (normalized.includes("phone") || normalized.includes("region"))) {
+      return UNSUPPORTED_REGION_LANGUAGE_FALLBACK;
+    }
+  }
+  return SERVICE_SUPPORT_ERROR;
+}
 const POLL_INTERVAL_MS = process.env.NODE_ENV === "test" ? 100 : 8000;
 const ACTIVE_SESSION_STORAGE_KEY = "carecall.activeLiveCallSession";
 const DEFERRED_PROVIDER_STATUSES = new Set(["busy", "declined", "expired", "no_answer", "voicemail"]);
@@ -265,8 +289,9 @@ export function PreflightApprovalGate({ operatorName = "carecall-coordinator", p
       });
       if (!response.accepted) {
         logTechnicalError("Live execution rejected by backend.", response.blocked_reasons);
-        setApprovalErrors([SERVICE_SUPPORT_ERROR]);
-        setResult(SERVICE_SUPPORT_ERROR);
+        const operatorMessage = liveExecutionRejectionMessage(response.blocked_reasons);
+        setApprovalErrors([operatorMessage]);
+        setResult(operatorMessage);
         setProgressStatus("failed");
         return;
       }

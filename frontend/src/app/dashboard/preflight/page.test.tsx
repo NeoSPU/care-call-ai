@@ -433,6 +433,29 @@ describe("PreflightPage", () => {
     expect(screen.queryByText("CALL-E readiness check failed.")).toBeNull();
   });
 
+  it("explains an unsupported CALL-E phone-region and language combination to the operator", async () => {
+    await renderPreflight();
+    vi.mocked(requestLiveExecution).mockResolvedValue({
+      accepted: false,
+      mode: "live",
+      real_calls_placed: 0,
+      blocked_reasons: [
+        "HTTP Error 422: Unprocessable Entity; call_not_ready: This number is recognized as GB, " +
+          "but English calls to GB aren’t currently supported.",
+      ],
+      records: [],
+    });
+
+    completeLiveGate();
+    fireEvent.click(await screen.findByRole("button", { name: "Start calls now" }));
+
+    const message =
+      "CALL-E does not currently support English calls to the selected GB phone region. " +
+      "Choose a supported recipient phone region and language combination, run preflight again, and retry.";
+    expect((await screen.findAllByText(message)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/HTTP Error 422/)).toBeNull();
+  });
+
   it("lets the operator import a terminal live CALL-E result into generated service requests", async () => {
     await renderPreflight();
     vi.mocked(requestLiveExecution).mockResolvedValue({

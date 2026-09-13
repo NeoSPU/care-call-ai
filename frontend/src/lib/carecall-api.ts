@@ -34,6 +34,7 @@ function backendApiCredential() {
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
+  acceptedStatuses?: number[];
 };
 
 async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -55,7 +56,7 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
     payload = null;
   }
 
-  if (!response.ok) {
+  if (!response.ok && !options.acceptedStatuses?.includes(response.status)) {
     const detail =
       payload && typeof payload === "object" && "detail" in payload
         ? String((payload as { detail: unknown }).detail)
@@ -201,6 +202,7 @@ export function approvePreflight(payload: ApprovalRequest): Promise<ApprovalResp
   return requestJson<ApprovalResponse>("/api/approvals", {
     method: "POST",
     body: payload,
+    acceptedStatuses: [409],
   });
 }
 
@@ -215,6 +217,7 @@ export function requestLiveExecution(payload: ExecutionRequest): Promise<Executi
   return requestJson<ExecutionResponse>("/api/execution/live", {
     method: "POST",
     body: payload,
+    acceptedStatuses: [409],
   });
 }
 
