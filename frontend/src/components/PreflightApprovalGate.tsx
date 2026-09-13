@@ -45,22 +45,37 @@ const UNSUPPORTED_REGION_LANGUAGE_FALLBACK =
 export function liveExecutionRejectionMessage(blockedReasons: string[]): string {
   for (const reason of blockedReasons) {
     const match = reason.match(
-      /recognized as ([A-Z]{2}).*?but ([A-Za-z-]+) calls to \1 (?:aren't|aren’t) currently supported/i,
+      /recognized as\s+([^,;]{2,40}),?\s+but\s+([^,;]{2,60}?)\s+calls? to\s+([^,;]{2,40}?)\s+(?:aren't|aren’t|are not)\s+currently supported/i,
     );
-    if (match) {
-      const region = match[1].toUpperCase();
-      const language = match[2];
+    if (match && sameProviderLabel(match[1], match[3]) && safeProviderLabel(match[1]) && safeProviderLabel(match[2])) {
+      const region = match[1].trim();
+      const language = match[2].trim();
       return (
         `CALL-E does not currently support ${language} calls to the selected ${region} phone region. ` +
         "Choose a supported recipient phone region and language combination, run preflight again, and retry."
       );
     }
     const normalized = reason.toLowerCase();
-    if (normalized.includes("currently supported") && (normalized.includes("phone") || normalized.includes("region"))) {
+    const unsupported =
+      normalized.includes("not currently supported") ||
+      normalized.includes("currently unsupported") ||
+      normalized.includes("unsupported");
+    const routeContext = ["call_not_ready", "language", "locale", "number", "phone", "region", "calls to"].some(
+      (marker) => normalized.includes(marker),
+    );
+    if (unsupported && routeContext) {
       return UNSUPPORTED_REGION_LANGUAGE_FALLBACK;
     }
   }
   return SERVICE_SUPPORT_ERROR;
+}
+
+function sameProviderLabel(left: string, right: string): boolean {
+  return left.trim().localeCompare(right.trim(), undefined, { sensitivity: "accent" }) === 0;
+}
+
+function safeProviderLabel(value: string): boolean {
+  return /^[\p{L}\p{N} .'-]+$/u.test(value.trim());
 }
 const POLL_INTERVAL_MS = process.env.NODE_ENV === "test" ? 100 : 8000;
 const ACTIVE_SESSION_STORAGE_KEY = "carecall.activeLiveCallSession";

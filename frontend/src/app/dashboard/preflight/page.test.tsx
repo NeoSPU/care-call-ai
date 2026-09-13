@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import PreflightPage from "./page";
+import { liveExecutionRejectionMessage } from "../../../components/PreflightApprovalGate";
 import {
   approvePreflight,
   cancelRun,
@@ -217,6 +218,42 @@ function completeLiveGate() {
     target: { value: "EXECUTE LIVE CALLS" },
   });
 }
+
+describe("liveExecutionRejectionMessage", () => {
+  it.each([
+    ["UA", "Ukrainian"],
+    ["UA", "Russian"],
+    ["US", "Spanish"],
+    ["BR", "Brazilian Portuguese"],
+    ["Ukraine", "Ukrainian"],
+  ])("identifies unsupported %s/%s combinations", (region, language) => {
+    const reason =
+      `call_not_ready: This number is recognized as ${region}, but ${language} calls to ${region} ` +
+      "are not currently supported.";
+
+    expect(liveExecutionRejectionMessage([reason])).toBe(
+      `CALL-E does not currently support ${language} calls to the selected ${region} phone region. ` +
+        "Choose a supported recipient phone region and language combination, run preflight again, and retry.",
+    );
+  });
+
+  it.each([
+    "call_not_ready: Locale uk-UA is unsupported for this phone number.",
+    "The selected language and region combination is currently unsupported.",
+    "Calls to this number are not currently supported.",
+  ])("uses safe generic guidance for alternate provider wording", (reason) => {
+    expect(liveExecutionRejectionMessage([reason])).toBe(
+      "CALL-E does not currently support the selected recipient's phone region and language combination. " +
+        "Choose a supported combination, run preflight again, and retry.",
+    );
+  });
+
+  it("does not expose unrelated internal provider failures", () => {
+    expect(liveExecutionRejectionMessage(["HTTP Error 500: internal provider trace"])).toBe(
+      "The service could not complete this action. Please contact support if the problem continues.",
+    );
+  });
+});
 
 describe("PreflightPage", () => {
   beforeEach(() => {
