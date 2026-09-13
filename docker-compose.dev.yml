@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
-      CARECALL_LIVE_CALLS_ENABLED: "${CARECALL_LIVE_CALLS_ENABLED:-false}"
+      CARECALL_LIVE_CALLS_ENABLED: "${CARECALL_LIVE_CALLS_ENABLED:-true}"
       CARECALL_MAX_LIVE_BATCH_SIZE: "${CARECALL_MAX_LIVE_BATCH_SIZE:-1}"
       CARECALL_DEMO_MAX_PHONE: "${CARECALL_DEMO_MAX_PHONE:-}"
       CARECALL_BACKEND_API_TOKEN: "${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}"
@@ -27,6 +27,7 @@ services:
       CARECALL_OPERATOR_USERNAME: "${CARECALL_OPERATOR_USERNAME:-carecall-coordinator}"
       CARECALL_OPERATOR_PASSWORD: "${CARECALL_OPERATOR_PASSWORD:-carecall-demo-password}"
       CARECALL_BACKEND_API_TOKEN: "${CARECALL_BACKEND_API_TOKEN:-carecall-local-backend-token}"
+      CARECALL_SIRI_CALLBACK_TOKENS: "${CARECALL_SIRI_CALLBACK_TOKENS:-}"
     ports:
       - "${CARECALL_FRONTEND_HOST_PORT:-3000}:3000"
     depends_on:

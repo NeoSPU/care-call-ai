@@ -134,13 +134,31 @@ CARECALL_OPERATOR_USERNAME=carecall-coordinator
 CARECALL_OPERATOR_PASSWORD=carecall-demo-password
 CARECALL_AUTH_SECRET=carecall-local-development-secret-not-for-production
 CARECALL_BACKEND_API_TOKEN=carecall-local-backend-token
-CARECALL_LIVE_CALLS_ENABLED=false
+CARECALL_LIVE_CALLS_ENABLED=true
+CARECALL_CALLE_API_KEY=
+CARECALL_SIRI_CALLBACK_TOKENS=
 ```
 
-These are intentionally public, local-only values. They are not production
-credentials. No CALL-E key, assistant token, support-delivery token, Siri token,
-external service, or manual secret generation is required for the local demo.
-Real outbound calls remain disabled.
+The fixed values are intentionally public and local-only. They are not
+production credentials. The empty CALL-E and Siri values are secret-placement
+slots: never commit real values.
+
+The application starts and can be reviewed with `CARECALL_CALLE_API_KEY` left
+empty. In that state, the backend fails closed and cannot place an outbound
+call. To verify the complete real-call path, put your own official CALL-E
+dashboard Access Key in `.env.local`:
+
+```dotenv
+CARECALL_CALLE_API_KEY=<your-official-CALL-E-access-key>
+```
+
+`CARECALL_LIVE_CALLS_ENABLED=true`, the API provider, API URL, and the one-call
+batch limit are already configured for the local Docker stack. After changing
+the key, restart with `make demo-down` followed by `make demo-up`. A real call
+still starts only after the coordinator selects an eligible recipient, reviews
+the no-call preflight, completes all confirmations, enters `EXECUTE LIVE CALLS`,
+and presses **Start calls now**. Use only a consented recipient and a phone
+number you are authorized to call.
 
 Build and start the complete frontend and backend stack:
 
@@ -218,8 +236,8 @@ Generate a different token for each registered recipient:
 openssl rand -base64 48
 ```
 
-For an optional local callback-intake test, add the token mapping to
-`.env.local`, then restart the local demo:
+For an optional local callback test, replace the empty token value in
+`.env.local` with a recipient mapping, then restart the local demo:
 
 ```text
 CARECALL_SIRI_CALLBACK_TOKENS=rec-001=<recipient-callback-token>
