@@ -4,9 +4,7 @@
 
 [![CareCall CI](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/NeoSPU/care-call-ai/actions/workflows/ci.yml)
 
-[![Watch the Care Call AI demo](frontend/public/carecall-splash-screen.png)](https://youtu.be/Hc2bWjTnKFQ)
-
-*Click the splash screen to watch the Care Call AI demo.*
+[![Care Call AI project landing](frontend/public/carecall-splash-screen.png)](https://about.care.alexraixon.com/)
 
 ## Judge Links
 
