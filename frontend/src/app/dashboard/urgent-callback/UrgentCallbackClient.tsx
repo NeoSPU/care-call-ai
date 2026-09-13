@@ -61,12 +61,16 @@ function isApprovedStatus(status: string) {
   return status === "approved_callback" || status === "callback_approved";
 }
 
-function terminalCallbackStatus(status: string) {
-  return ["resolved", "auto_callback_completed", "auto_callback_no_contact"].includes(status);
+function automaticCallbackFinishedStatus(status: string) {
+  return ["auto_callback_completed", "auto_callback_no_contact", "auto_callback_failed"].includes(status);
+}
+
+function callbackResolvedStatus(status: string) {
+  return status === "resolved" || ["auto_callback_completed", "auto_callback_no_contact"].includes(status);
 }
 
 function callbackDisplayStatus(request: CallbackRequestDto) {
-  if (request.auto_run_id && !terminalCallbackStatus(request.status)) {
+  if (request.auto_run_id && !automaticCallbackFinishedStatus(request.status)) {
     return request.auto_call_status || "auto_callback_started";
   }
   return request.status;
@@ -82,13 +86,13 @@ function callbackSummary(requests: CallbackRequestDto[]): CallbackRequestsPayloa
       const status = callbackDisplayStatus(request);
       return isApprovedStatus(status) || status === "auto_callback_started";
     }).length,
-    resolved: requests.filter((request) => terminalCallbackStatus(callbackDisplayStatus(request))).length,
+    resolved: requests.filter((request) => callbackResolvedStatus(callbackDisplayStatus(request))).length,
   };
 }
 
 function activeAutoRunIds(requests: CallbackRequestDto[]) {
   return requests
-    .filter((request) => request.auto_run_id && !terminalCallbackStatus(callbackDisplayStatus(request)))
+    .filter((request) => request.auto_run_id && !automaticCallbackFinishedStatus(callbackDisplayStatus(request)))
     .map((request) => request.auto_run_id as string);
 }
 
@@ -289,7 +293,7 @@ export function UrgentCallbackClient({ data, operatorName }: UrgentCallbackClien
             <tbody>
               {visibleRequests.map((request) => {
                 const displayStatus = callbackDisplayStatus(request);
-                const autoCallbackActive = Boolean(request.auto_run_id && !terminalCallbackStatus(displayStatus));
+                const autoCallbackActive = Boolean(request.auto_run_id && !automaticCallbackFinishedStatus(displayStatus));
                 return (
                   <tr key={request.id}>
                     <td>
@@ -317,7 +321,7 @@ export function UrgentCallbackClient({ data, operatorName }: UrgentCallbackClien
                     </td>
                     <td>{request.request_text}</td>
                     <td>
-                      {terminalCallbackStatus(displayStatus) ? (
+                      {automaticCallbackFinishedStatus(displayStatus) ? (
                       <div className="rowActions">
                         <button
                           className="button compact secondary"

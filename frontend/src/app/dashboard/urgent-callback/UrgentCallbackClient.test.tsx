@@ -317,6 +317,44 @@ describe("UrgentCallbackClient", () => {
     });
   });
 
+  it("lets the operator clear a failed automatic callback while keeping it in review until cleared", async () => {
+    const failedPayload = {
+      summary: { new: 0, in_review: 1, callback_approved: 0, resolved: 0 },
+      callback_requests: [
+        {
+          ...urgentPayload.callback_requests[0],
+          status: "auto_callback_failed",
+          auto_call_status: "auto_callback_failed",
+          auto_run_id: "run-callback-failed",
+          auto_call_error: "Automatic callback failed at the provider.",
+          call_started_at: "2026-09-03 13:00:00",
+          call_completed_at: "2026-09-13 17:32:00",
+        },
+      ],
+    };
+    vi.mocked(updateCallbackRequest).mockResolvedValue({
+      summary: { new: 0, in_review: 0, callback_approved: 0, resolved: 1 },
+      callback_requests: [{ ...failedPayload.callback_requests[0], status: "resolved", operator: "Max Neous" }],
+    });
+
+    render(<UrgentCallbackClient data={failedPayload} operatorName="Max Neous" />);
+
+    expect(screen.getByText("Auto Callback Failed")).toBeTruthy();
+    expect(screen.getByText("Automatic callback failed at the provider.")).toBeTruthy();
+    expect(screen.queryByText("Automatic call started")).toBeNull();
+    expect(screen.getByText("1")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear from queue" }));
+
+    await waitFor(() => {
+      expect(updateCallbackRequest).toHaveBeenCalledWith("cb-001", {
+        status: "resolved",
+        operator: "Max Neous",
+        resolution_note: "Cleared from callback queue after terminal automatic callback.",
+      });
+    });
+  });
+
   it("notifies the shell badge immediately when a callback request is dismissed", async () => {
     const countListener = vi.fn();
     window.addEventListener(URGENT_CALLBACK_COUNT_EVENT, countListener);
