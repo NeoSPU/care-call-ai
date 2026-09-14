@@ -1,0 +1,29 @@
+CareCall AI Proprietary License
+
+Copyright (c) 2026 Alex Raixon. All rights reserved.
+
+This repository, including its source code, documentation, product copy,
+design assets, workflows, and other materials, is proprietary. No open-source
+license is granted.
+
+Except for the limited permission below, you may not copy, modify, distribute,
+sublicense, sell, host, or create derivative works from any part of this
+repository without prior written permission from the copyright holder.
+
+Limited Hackathon Evaluation Permission
+
+Devpost, CALL-E, hackathon sponsors, hackathon administrators, and assigned
+judges may view, clone, build, run, test, demonstrate, and evaluate this
+repository solely for reviewing the CareCall AI hackathon submission. This
+permission includes reasonable technical steps needed to assess the project,
+such as running local development services, executing tests, and opening the
+application UI.
+
+This limited permission does not grant ownership, an open-source license,
+commercial use rights, redistribution rights, sublicensing rights, or permission
+to reuse the project outside hackathon review and judging unless separately
+agreed in writing.
+
+Third-party dependencies, tools, services, and trademarks remain subject to
+their own licenses, terms, and ownership. Nothing in this license modifies or
+relicenses those third-party rights.

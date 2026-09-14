@@ -1,0 +1,25 @@
+CareCall AI Proprietary Notice
+
+CareCall AI is a proprietary hackathon submission by Alex Raixon. The project
+is shared publicly for transparency and hackathon review, but it is not released
+as open source.
+
+Evaluation access: Devpost, CALL-E, hackathon sponsors, hackathon
+administrators, and assigned judges may view, clone, build, run, test,
+demonstrate, and evaluate this repository solely for reviewing the hackathon
+submission, as described in LICENSE.
+
+Product boundary: CareCall AI demonstrates practical support outreach and
+fulfilment coordination for charities and support organisations. It is not a
+medical, healthcare, clinical, patient-care, or emergency-response product.
+Medication pickup or delivery in this project means practical logistics support
+only; it does not include prescribing, dosage advice, clinical monitoring, or
+treatment.
+
+Demo data: Any sample recipients, phone numbers, scenarios, orders, and logs in
+this repository are fictional, masked, or synthetic unless explicitly stated
+otherwise.
+
+Third-party rights: CALL-E, Devpost, package dependencies, frameworks,
+platforms, and other third-party services or marks belong to their respective
+owners and remain governed by their own licenses and terms.
